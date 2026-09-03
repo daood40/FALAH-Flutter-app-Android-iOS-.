@@ -50,6 +50,9 @@ GATES = [
      True, "سقوطٌ هنا يعني ضياعَ عملٍ أو رسالةً غامضة عند العطب", None),
     ("leak",     "تسريب الأخطاء والسجلّ", [PY, "leak_test.py"],
      True, "أزِل ما يُسرَّب من الردّ وانقله إلى log_error", None),
+    ("isolation", "حدود المستخدم والملفّات", [PY, "isolation_test.py"],
+     True, "سقوطٌ هنا يعني أن مستخدمًا يبلغ مورِدَ غيره — أوقف كلَّ شيء وأصلحه",
+     None),
     ("docker",   "إعداد الحاوية", None,
      True, "docker compose config يشرح الخطأ", None),
     ("build",    "بناء صورة الحاوية", ["docker", "build", "-t", "falah:gate", "."],
@@ -150,7 +153,10 @@ def main():
         return 0
 
     gates = [g for g in GATES if not a.only or g[0] in a.only]
-    env = dict(os.environ, APP=APP, API=APP)
+    # حزم الفحص تسجّل عشرات الحسابات من عنوانٍ واحد، فتبلغ حدَّ التسجيل
+    # «لكل عنوان». التجاوز يُعلَن هنا صراحةً ولا يُضعَّف الافتراضيُّ في الإنتاج.
+    #
+    env = dict(os.environ, APP=APP, API=APP, FALAH_RATE_REGISTER="10000")
     results, srv = [], None
     needs_net = {"audit", "ui"}
 

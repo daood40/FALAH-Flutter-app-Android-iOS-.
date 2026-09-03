@@ -344,9 +344,12 @@ class H(BaseHTTPRequestHandler):
 
             elif p == "/review":
                 kind = g("kind"); lim = gi("limit", 50)
-                rows = c.execute("SELECT * FROM review_queue %s LIMIT ?" %
-                                 ("WHERE kind=?" if kind else ""),
-                                 ((kind, lim) if kind else (lim,))).fetchall()
+                # استعلامان مكتوبان لا واحدٌ يُركَّب: المركَّب هنا لم يكن
+                # قابلًا للحقن (الجزءُ المدمَج ثابت)، لكن النمط يُغري بأن
+                # يُدمَج فيه يومًا ما ليس ثابتًا. يُزال النمط لا الخطر وحده.
+                rows = (c.execute("SELECT * FROM review_queue WHERE kind=? LIMIT ?",
+                                  (kind, lim)) if kind else
+                        c.execute("SELECT * FROM review_queue LIMIT ?", (lim,))).fetchall()
                 tot = c.execute("SELECT reason, COUNT(*) n FROM review_queue"
                                 " GROUP BY reason ORDER BY n DESC").fetchall()
                 self._send({"summary": [dict(r) for r in tot],

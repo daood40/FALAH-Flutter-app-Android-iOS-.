@@ -37,10 +37,25 @@ def ayah_audio(surah, ayah, reciter):
     if not idx: raise SystemExit("الآية غير موجودة")
     return r["name"], audio_url(r["scheme"], r["folder"], surah, ayah, idx["id"])
 
+MAX_AUDIO = int(os.environ.get("FALAH_MAX_AUDIO_BYTES", 25_000_000))
+
 def fetch(url, path):
+    """يجلب تلاوةً. المخطَّط يُشترط، والحجم يُحدّ، والتحويل لا يُتَّبع أعمى.
+
+    الرابط اليوم يُبنى من جدول القرّاء في الشيفرة، فلا يبلغه مستخدم. لكن
+    `urlopen` يفتح `file://` و`ftp://` أيضًا — فسطرٌ منحرفٌ في الجدول يومًا
+    يصير قراءةَ ملفٍّ من قرص الخادم. الشرطُ هنا يجعل ذلك مستحيلًا لا بعيدًا.
+    """
+    if not str(url).lower().startswith(("http://", "https://")):
+        raise SystemExit("رابط تلاوةٍ بمخطَّطٍ غير مقبول")
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=60) as r, open(path, "wb") as f:
-        f.write(r.read())
+    with urllib.request.urlopen(req, timeout=60) as r:
+        if not str(r.geturl()).lower().startswith(("http://", "https://")):
+            raise SystemExit("تحويلٌ إلى مخطَّطٍ غير مقبول")
+        data = r.read(MAX_AUDIO + 1)
+    if len(data) > MAX_AUDIO:
+        raise SystemExit(f"ملفّ التلاوة أكبر من الحدّ ({MAX_AUDIO//1_000_000} م.ب)")
+    with open(path, "wb") as f: f.write(data)
     return path
 
 def build(surah, ayah, to, reciter, skin, ratio, wm, out, fade=0.6, tail=1.2):

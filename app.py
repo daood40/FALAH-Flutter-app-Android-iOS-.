@@ -29,15 +29,48 @@ SECURE  = os.environ.get("FALAH_SECURE") == "1"      # خلف HTTPS: كعكةٌ 
 ORIGIN  = os.environ.get("FALAH_ORIGIN", "").rstrip("/")   # نطاق الإنتاج، إن حُدِّد
 INVITE  = os.environ.get("FALAH_INVITE", "").strip()  # إطلاقٌ مغلق: لا حساب إلا برمز دعوة
 ADMIN_KEY = os.environ.get("FALAH_ADMIN_KEY", "").strip()   # منح الاشتراك وإيصالات المتجر
+# لا تُقرأ X-Forwarded-For إلا بإعلانٍ صريح — انظر `client_ip`
+TRUST_PROXY = os.environ.get("FALAH_TRUST_PROXY") == "1"
 # كل مسارات القراءة في api.py تُمرَّر كما هي. القائمة تُقابل ما في `api.H.do_GET`
 # حرفًا بحرف — نقصانُ اسمٍ هنا يعني ٤٠٤ لمسارٍ موجود، وهو ما كشفه الفحص.
 CONTENT_PATHS = ("/health", "/sources", "/review", "/topics", "/quran", "/hadith",
                  "/enc", "/reciters", "/audio", "/card", "/verify", "/series",
                  "/options", "/chapters", "/chapter", "/templates", "/template")
 
+MAX_BODY = int(os.environ.get("FALAH_MAX_BODY", 1_000_000))
+
+# ═══════════ حدّ المعدّل على المكلف ═══════════
+# كان الحدُّ على الدخول وحده. والتصدير والمقطع أثقلُ منه بكثير — بطاقةٌ
+# ثلاثُ ثوانٍ ومقطعٌ ستٌّ وعشرون — فمن يستطيع بدءَ ألفٍ في الساعة يخنق
+# الخدمة على غيره ولو لم يتجاوز حصّته الشهرية.
+#
+# **وما يُعدّ هو العملُ المقبول لا الطلب.** مئةُ نقرةٍ على الزرّ نفسه تصير
+# مهمّةً واحدة (بفضل مفتاح التفرّد)، فتُحسب واحدة. بهذا يمنع الحدُّ الإساءة
+# ولا يكسر تزامنًا مشروعًا — وهو الفرق بين حدٍّ يحمي وحدٍّ يُزعج.
+def _lim(name, default, window):
+    return (int(os.environ.get(f"FALAH_RATE_{name}", default)), window)
+
+RATE = {
+    "export":   _lim("EXPORT",   30, 3600),    # ثلاثون تصديرًا في الساعة
+    "video":    _lim("VIDEO",    15, 3600),
+    "agent":    _lim("AGENT",   300, 3600),    # سؤالٌ وجوابٌ — أخفّ بكثير
+    "register": _lim("REGISTER", 20, 3600),    # لكل عنوان — والعناوين تُشارَك
+    "file":     _lim("FILE",    600, 3600),
+}
+
+class BodyTooLarge(Exception): pass
+
 def body_json(h):
+    """يقرأ جسم الطلب. الكبيرُ جدًّا يُرفض **صراحةً** لا صمتًا.
+
+    كان يُرمى الجسمُ الكبير ويُعامَل الطلب كأنه فارغ، فيُقال للمستخدم «حقل
+    ناقص» — وهو ليس ناقصًا بل مرفوضًا، فيبحث عن خطأٍ ليس عنده. وما جاوز
+    ذلك بكثير كان يقطع الاتصال: الخادم يردّ ولا يستنزف الجسم، فينكسر
+    الأنبوب على العميل ويرى «فشل الاتصال» لا رسالةً يفهمها.
+    """
     n = int(h.headers.get("Content-Length") or 0)
-    if n <= 0 or n > 1_000_000: return {}
+    if n > MAX_BODY: raise BodyTooLarge(n)
+    if n <= 0: return {}
     try:    return json.loads(h.rfile.read(n).decode("utf-8"))
     except Exception: return {}
 
@@ -112,6 +145,45 @@ class App(BaseHTTPRequestHandler):
         sec = "; Secure" if SECURE else ""
         return [("Set-Cookie", f"{COOKIE}=; Path=/; HttpOnly; SameSite=Strict{sec}; Max-Age=0")]
 
+    def client_ip(self):
+        """عنوانُ العميل الحقيقيّ — وهذا أدقّ ممّا يبدو.
+
+        خلف وكيلٍ أماميّ (Caddy وأمثاله) يكون `client_address` عنوانَ
+        الوكيل، فيصير حدُّ «لكل عنوان» حدًّا **للعالم كلّه معًا**: أوّلُ
+        عشرين مسجِّلًا يمنعون البقيّة. وهذا خللُ إتاحةٍ لا حماية.
+
+        والعلاج ليس الثقةَ بـ`X-Forwarded-For` دائمًا — فمن لا وكيلَ أمامه
+        يستطيع أن يكتبها بيده فيتخطّى كلَّ حدّ. فتُقرأ **فقط** حين يُعلن
+        المشغّل `FALAH_TRUST_PROXY=1`، أي حين يضمن أن وكيلَه يكتبها هو
+        ويمحو ما جاء من العميل. إعلانٌ لا تخمين.
+        """
+        if TRUST_PROXY:
+            # **الأخيرة لا الأولى.** الوكيل يُلحق عنوانَ العميل بما وجده، فلو
+            # أرسل العميل `X-Forwarded-For: 1.2.3.4` صارت «1.2.3.4, <الحقيقيّ>»
+            # — فأخذُ الأولى يأخذ ما كتبه المنتحِل بيده. الأخيرة هي التي
+            # كتبها وكيلُنا. وCaddyfile يمحوها فوق ذلك احتياطًا مضاعفًا.
+            xff = [x.strip() for x in
+                   (self.headers.get("X-Forwarded-For") or "").split(",") if x.strip()]
+            if xff: return xff[-1][:64]
+        return self.client_address[0] if self.client_address else "-"
+
+    def rate_ok(self, c, kind, who):
+        """يعيد True إن بقي في الحدّ. ولا يزيد العدّاد — الزيادة عند القبول."""
+        lim, win = RATE[kind]
+        return not auth.throttled(c, f"rate:{kind}:{who}", limit=lim, window=win)
+
+    def rate_bump(self, c, kind, who):
+        auth.bump(c, f"rate:{kind}:{who}", window=RATE[kind][1])
+
+    def too_many(self, kind):
+        lim, win = RATE[kind]
+        mins = win // 60
+        self.send_json({"error": f"تجاوزتَ الحدّ: {lim} في {mins} دقيقة. "
+                                 f"انتظر قليلًا ثم أعد المحاولة.",
+                        "limit": lim, "window_seconds": win}, 429,
+                       extra=[("Retry-After", str(win))])
+        return None
+
     def guard_csrf(self):
         """طبقتان: ترويسةٌ لا يرسلها نموذجٌ من موقعٍ آخر، ومصدرُ الطلب إن حُدِّد النطاق."""
         if self.headers.get("X-FALAH") != "1": return False
@@ -170,7 +242,17 @@ class App(BaseHTTPRequestHandler):
         p = urllib.parse.urlparse(self.path).path
         if not p.startswith("/app/"):  return self.send_json({"error": "مسار غير معروف"}, 404)
         if not self.guard_csrf():      return self.send_json({"error": "طلب غير موثوق"}, 403)
-        return self.app_post(p, body_json(self))
+        try:
+            b = body_json(self)
+        except BodyTooLarge as e:
+            # ٤١٣ مع إغلاق الاتصال: الجسم لم يُقرأ، فلا يصحّ إبقاء الاتصال
+            # مفتوحًا وفيه بقيّةٌ تُقرأ على أنها طلبٌ تالٍ.
+            self.close_connection = True
+            mb = MAX_BODY / 1_048_576
+            return self.send_json({"error": f"الطلب أكبر من الحدّ ({mb:.1f} م.ب)",
+                                   "limit_bytes": MAX_BODY, "got_bytes": int(str(e))}, 413,
+                                  extra=[("Connection", "close")])
+        return self.app_post(p, b)
 
     # ــــــــــــــــــــ الحياة والجاهزية ــــــــــــــــــــ
     # الفرق ليس تجميلًا: `/healthz` يسأل «أحيَّةٌ العملية؟» فإن سقط أُعيد
@@ -256,6 +338,8 @@ class App(BaseHTTPRequestHandler):
                 finally: content.close()
 
             if p == "/app/file":
+                if not self.rate_ok(c, "file", u["id"]): return self.too_many("file")
+                self.rate_bump(c, "file", u["id"]); c.commit()
                 rel = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("p", [""])[0]
                 return self.send_export_file(c, u, rel)
 
@@ -300,6 +384,9 @@ class App(BaseHTTPRequestHandler):
             agent = self.headers.get("User-Agent", "")
 
             if p == "/app/register":
+                ip = self.client_ip()
+                if not self.rate_ok(c, "register", ip): return self.too_many("register")
+                self.rate_bump(c, "register", ip); c.commit()
                 if INVITE and (b.get("invite") or "").strip() != INVITE:
                     store.log(c, None, "invite_rejected", (b.get("email") or "")[:80]); c.commit()
                     return self.send_json({"error": "رمز الدعوة غير صحيح"}, 403)
@@ -425,6 +512,8 @@ class App(BaseHTTPRequestHandler):
                 return self.export(c, content, u, int(b["project"]))
 
             if p == "/app/agent":
+                if not self.rate_ok(c, "agent", u["id"]): return self.too_many("agent")
+                self.rate_bump(c, "agent", u["id"]); c.commit()
                 from falah import agent as AG
                 ans = b.get("answers") or {}
                 ans = AG.sanitize(ans, DB)
@@ -510,6 +599,7 @@ class App(BaseHTTPRequestHandler):
         if dup:
             return self.send_json({"job": JB.view(dup), "duplicate": True,
                                    "note": "هذا التصدير في الطابور بالفعل"}, 202)
+        if not self.rate_ok(c, "export", u["id"]): return self.too_many("export")
         billing.consume(c, u["id"], "cards", n)
         try:
             job = JB.enqueue(c, u["id"], "export", {"project": pid}, {"cards": n})
@@ -522,6 +612,7 @@ class App(BaseHTTPRequestHandler):
         except JB.JobError:
             billing.release(c, u["id"], "cards", n)     # لم تدخل الطابور فلا تُحاسَب
             raise
+        self.rate_bump(c, "export", u["id"])      # عند القبول لا عند الطلب
         store.log(c, u["id"], "export_queued", f"{pid}:{job['id']}"); c.commit()
         self.send_json({"job": job, "cards": n,
                         "note": "التصدير في الطابور — تابِع حالته"}, 202)
@@ -545,6 +636,7 @@ class App(BaseHTTPRequestHandler):
         if dup:
             return self.send_json({"job": JB.view(dup), "duplicate": True,
                                    "note": "هذا المقطع في الطابور بالفعل"}, 202)
+        if not self.rate_ok(c, "video", u["id"]): return self.too_many("video")
         billing.consume(c, u["id"], "videos")
         try:
             job = JB.enqueue(c, u["id"], "video", pay, {"videos": 1})
@@ -555,6 +647,7 @@ class App(BaseHTTPRequestHandler):
         except JB.JobError:
             billing.release(c, u["id"], "videos", 1)
             raise
+        self.rate_bump(c, "video", u["id"])
         store.log(c, u["id"], "video_queued", f"{pid}:{item_id}:{job['id']}"); c.commit()  # noqa
         self.send_json({"job": job, "note": "المقطع في الطابور — تابِع حالته"}, 202)
 

@@ -178,12 +178,27 @@ def delete_account(c, user_id, export_dir=None):
     c.commit()
     removed = 0
     if export_dir:
+        # الحدُّ مجلّدُ صاحب الحساب وحده — لا جذرُ المشروع.
+        #
+        # كان `export_dir` يُمرَّر جذرَ المشروع، فلو صار في `exports.path`
+        # سطرٌ منحرفٌ يومًا لأمكن أن يُحذف به `app.py` أو `falah.db`. ولا
+        # يُحتجّ بأن السطر يكتبه الخادم: الحدُّ يُرسم على أضيق ما يكفي، لا
+        # على أوسع ما يُظنّ آمنًا اليوم.
+        #
+        # و`realpath` لا `abspath`: الثانية لا تحلّ الوصلات الرمزية، فوصلةٌ
+        # داخل `exports` تشير خارجها كانت تمرّ.
+        root = os.path.realpath(os.path.join(export_dir, "exports", str(user_id)))
         for r in rows:
-            p = os.path.join(export_dir, str(r[0]).lstrip("/"))
-            if os.path.commonpath([os.path.abspath(p), os.path.abspath(export_dir)]) \
-               == os.path.abspath(export_dir) and os.path.isfile(p):
+            p = os.path.realpath(os.path.join(export_dir, str(r[0]).lstrip("/")))
+            if (p == root or p.startswith(root + os.sep)) and os.path.isfile(p):
                 try: os.remove(p); removed += 1
                 except OSError: pass
+        # والمجلّد نفسه يُطوى إن خلا — لا تبقى أصدافٌ فارغة
+        try:
+            for dirpath, dirnames, files in os.walk(root, topdown=False):
+                if not files and not os.listdir(dirpath): os.rmdir(dirpath)
+        except OSError:
+            pass
     return {"projects": len(pids), "files": removed}
 
 

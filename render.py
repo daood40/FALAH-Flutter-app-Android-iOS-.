@@ -9,7 +9,7 @@
 نفس القالب الذي يراه المستخدم في الواجهة، فما رآه هو ما يُصدَّر.
 الخطوط محلّية (أميري بترخيص OFL) فلا يتغيّر الرسم باختلاف الجهاز.
 """
-import argparse, base64, os, sqlite3, sys, tempfile
+import argparse, base64, os, re, sqlite3, sys, tempfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import api
 from falah import verify as V
@@ -65,12 +65,33 @@ TINTS = {
 FONTS_UI = {"auto": None, "amiri": "'Amiri',serif",
             "amiri-quran": "'AmiriQuran','Amiri',serif"}
 
+# لونٌ مقبول: ستّ عشريّة أو ثلاث، أو اسمٌ من قائمةٍ معلومة. لا شيء غيره.
+COLOR_RE = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
+COLOR_NAMES = {"black", "white", "gray", "grey", "brown", "navy", "green",
+               "gold", "sand", "coal", "ivory", "auto"}
+
+def safe_color(value, fallback):
+    """لا يدخل CSS إلا لونٌ يشبه اللون.
+
+    وُجدت هذه الدالّة لأن `ink` كان يُدرج في `<style>` كما جاء، فأمكن أن
+    يُغلق الوسم ويُفتح `<script>` مكانه — أي تنفيذُ شيفرةٍ في المتصفّح
+    الذي يعرض المعاينة، وطلبُ شبكةٍ من **داخل** حاوية العامل التي تُصيّر.
+    القيمة تأتي من إجابات المستخدم، فلا تُوثق ولو مرّة.
+    """
+    if not value or value == "auto": return fallback
+    v = str(value).strip()
+    if COLOR_RE.match(v) or v.lower() in COLOR_NAMES: return v
+    return fallback
+
 def skin_of(skin="parch", tint=None, ink=None):
-    """الهيئة بعد تطبيق لون التصميم ولون الخط — بلا مساسٍ بالنصّ نفسه."""
+    """الهيئة بعد تطبيق لون التصميم ولون الخط — بلا مساسٍ بالنصّ نفسه.
+
+    وكلُّ ما يدخل CSS يمرّ بـ`safe_color`: الاسمُ غير المعروف يسقط إلى
+    لون الهيئة، ولا يُنقل حرفٌ من المستخدم إلى ورقة الأنماط.
+    """
     s = dict(SKINS.get(skin) or SKINS["parch"])
     s.update(TINTS.get(tint or "auto", {}))
-    if ink and ink != "auto":
-        s["ink"] = ink
+    s["ink"] = safe_color(ink, s["ink"])
     return s
 
 def font_face(name, filename, weight=400):

@@ -42,7 +42,28 @@ def ref_key(kind, ref):
 
 # ــــــــــــــــــــ المشاريع ــــــــــــــــــــ
 
+ENUMS = {
+    "kind":  {"card", "series", "video"},
+    "skin":  {"parch", "night", "ivory"},
+    "ratio": {"square", "portrait", "vertical", "wide"},
+}
+LIMITS = {"title": 120, "watermark": 60, "note": 2000}
+
+def validate(kw):
+    """يرفع ProjectError عند أول قيمةٍ خارج المعدود أو أطول من حدّها."""
+    for k, allowed in ENUMS.items():
+        v = kw.get(k)
+        if v is not None and str(v) not in allowed:
+            raise ProjectError(f"قيمةٌ غير مقبولة لـ«{k}» — المتاح: "
+                               + " · ".join(sorted(allowed)))
+    for k, n in LIMITS.items():
+        v = kw.get(k)
+        if v is not None and len(str(v)) > n:
+            raise ProjectError(f"«{k}» أطول من {n} محرفًا")
+    return kw
+
 def create(c, user_id, title, kind="series", skin="night", ratio="square", watermark=None):
+    validate({"kind": kind, "skin": skin, "ratio": ratio, "watermark": watermark})
     title = (title or "").strip()[:120] or "مشروع بلا عنوان"
     n = c.execute("SELECT COUNT(*) n FROM projects WHERE user_id=? AND archived=0",
                   (user_id,)).fetchone()["n"]
@@ -68,8 +89,11 @@ def listing(c, user_id, archived=0):
         d = dict(r); d["items"] = d.pop("n"); out.append(d)
     return out
 
+# ما يُقبل في الحقول المعدودة. القيمةُ خارجها تُرفض عند الباب لا تُحفظ ثم
+# تُكتشف عند التصيير — الطبقةُ التي تُصيّر تحرس نفسها كذلك، وهذا حرسٌ ثانٍ.
 def update(c, user_id, pid, **kw):
     owned(c, user_id, pid)
+    validate(kw)
     cols = [k for k in ("title", "kind", "skin", "ratio", "watermark", "note", "archived")
             if kw.get(k) is not None]
     if not cols: return

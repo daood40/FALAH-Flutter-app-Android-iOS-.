@@ -69,7 +69,7 @@ def main():
     port = free_port(); base = f"http://127.0.0.1:{port}"
     log = os.path.join(d, "server.log")
     env = dict(os.environ, FALAH_APP_DB=os.path.join(d, "app.db"), PORT=str(port),
-               FALAH_INLINE_WORKER="1",
+               FALAH_INLINE_WORKER="1", FALAH_RATE_REGISTER="10000",
                FALAH_ADMIN_KEY="admin-secret-value-must-never-leak-12345")
     lf = open(log, "w")
     p = subprocess.Popen([sys.executable, "app.py"], cwd=HERE, env=env,

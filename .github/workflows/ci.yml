@@ -140,6 +140,9 @@ jobs:
       - name: فحص تسريب الأخطاء والسجلّ
         run: python3 leak_test.py
 
+      - name: حدود المستخدم والملفّات — أ ← موردُ ب
+        run: python3 isolation_test.py
+
       - name: سلامة القاعدة وبروفة الهجرات
         run: |
           set -euo pipefail
