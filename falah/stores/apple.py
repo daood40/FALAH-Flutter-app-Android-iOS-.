@@ -120,7 +120,7 @@ def verify_jws(signed, root_ca=None, now=None):
                     != root.fingerprint(hashes.SHA256()) else [])
     if full[-1].fingerprint(hashes.SHA256()) != root.fingerprint(hashes.SHA256()):
         raise AppleError("سلسلة الشهادات لا تنتهي إلى جذر آبل الذي أعطيتَه")
-    for child, parent in zip(full, full[1:]):
+    for child, parent in zip(full, full[1:], strict=False):   # أزواجٌ متتالية عمدًا
         try:
             _verify_cert(child, parent)
         except AppleError:
@@ -143,7 +143,6 @@ def verify_jws(signed, root_ca=None, now=None):
         raise AppleError("التوقيع لا يطابق الحمولة: " + type(e).__name__)
 
 def _verify_cert(child, parent):
-    from cryptography.hazmat.primitives import hashes
     from cryptography.hazmat.primitives.asymmetric import ec, padding, rsa
     pub = parent.public_key()
     if isinstance(pub, ec.EllipticCurvePublicKey):

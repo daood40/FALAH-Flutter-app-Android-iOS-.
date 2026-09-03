@@ -15,31 +15,125 @@
 بل يفتح المشروع بـ`projects.open_project` فيُعاد الفحصُ وقتَ التصيير — وهو
 أدقّ من الفحص وقت الطلب، إذ قد يمرّ بينهما وقت.
 """
-import json, os, socket, sqlite3, time
+import hashlib, json, os, socket, sqlite3
 
 from . import store, billing
 
-STALE   = int(os.environ.get("FALAH_JOB_STALE", 300))   # عاملٌ صامتٌ خمس دقائق يُعدّ متوقّفًا
-KEEP    = int(os.environ.get("FALAH_JOB_KEEP", 7 * 86400))
-KINDS   = ("export", "video")
+def _int(name, default):
+    try:    return max(0, int(os.environ.get(name, default)))
+    except (TypeError, ValueError): return default
 
-class JobError(Exception): pass
+# ═══════════ الحدود — كلّها من متغيّرات البيئة ═══════════
+STALE       = _int("FALAH_JOB_STALE", 300)      # عاملٌ صامتٌ ٥ دقائق يُعدّ متوقّفًا
+KEEP        = _int("FALAH_JOB_KEEP", 7 * 86400) # عمر سجلّ المهمّة المنتهية
+MAX_RETRIES = _int("FALAH_MAX_RETRIES", 2)      # محاولاتٌ إضافية بعد الأولى
+BACKOFF     = _int("FALAH_BACKOFF", 5)          # ثوانٍ، تتضاعف: ٥ ثم ١٠ ثم ٢٠…
+BACKOFF_MAX = _int("FALAH_BACKOFF_MAX", 300)
+JOB_TIMEOUT = _int("FALAH_JOB_TIMEOUT", 600)    # سقفُ زمن المهمّة الواحدة
+MAX_QUEUED  = _int("FALAH_MAX_QUEUED_PER_USER", 5)   # طابورُ المستخدم الواحد
+MAX_RUNNING = _int("FALAH_MAX_RUNNING", 4)      # سقفُ ما يجري معًا في النظام كلّه
+MAX_CARDS   = _int("FALAH_MAX_CARDS_PER_JOB", 60)    # أطولُ سلسلةٍ في مهمّةٍ واحدة
+MAX_VIDEO_S = _int("FALAH_MAX_VIDEO_SECONDS", 180)
+MAX_STORE_MB = _int("FALAH_MAX_STORAGE_MB_PER_USER", 2048)
+
+KINDS = ("export", "video")
+
+# ═══════════ آلة الحالات ═══════════
+# خمسُ حالاتٍ لا سادسَ لها، وانتقالاتٌ معدودة. ما ليس في هذا الجدول لا يقع:
+# `done → running` مثلًا يعني أن مهمّةً سُلِّمت ثمّ أُعيد تصييرها فوق نتيجتها.
+STATES = ("queued", "running", "done", "failed", "canceled")
+TRANSITIONS = {
+    "queued":   {"running", "canceled"},
+    "running":  {"done", "failed", "queued"},   # queued = إعادةٌ بعد عطبٍ عابر
+    "done":     set(),                          # نهائية
+    "failed":   set(),                          # نهائية — إعادةُ الطلب مهمّةٌ جديدة
+    "canceled": set(),
+}
+TERMINAL = {"done", "failed", "canceled"}
+
+class JobError(Exception):
+    """خطأ المستخدم أو الطلب — لا يُعاد. المشروع الفارغ يبقى فارغًا."""
+
+class JobConflict(JobError):
+    """طلبٌ مكرَّرٌ لمهمّةٍ حيّة — يُردّ بالمهمّة القائمة لا بمهمّةٍ ثانية."""
+
+class JobLimit(JobError):
+    """تجاوزُ حدٍّ من حدود الموارد."""
 
 def me():
     return f"{socket.gethostname()}:{os.getpid()}"
 
+def can(frm, to):
+    return to in TRANSITIONS.get(frm, set())
+
+def _guard(c, job_id, to):
+    """يمنع الانتقال غير المشروع عند مصدره لا بعد وقوعه."""
+    r = c.execute("SELECT state FROM jobs WHERE id=?", (job_id,)).fetchone()
+    if not r: raise JobError("المهمّة غير موجودة")
+    if not can(r["state"], to):
+        raise JobError(f"انتقالٌ غير مشروع: {r['state']} ← {to}")
+    return r["state"]
+
+def idem_key(user_id, kind, payload):
+    """بصمةُ الطلب: صاحبه ونوعه وحمولته مرتَّبة. نقرتان على الزرّ نفسه
+    تُعطيان البصمة نفسها، فلا تدخل الثانيةُ الطابور."""
+    blob = json.dumps({"u": user_id, "k": kind, "p": payload},
+                      sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+def backoff_for(attempt):
+    """تراجعٌ أُسّيّ: ٥ث ثم ١٠ ثم ٢٠… بسقف. عطبٌ عابر يُعاد بعد مهلةٍ لا فورًا،
+    وإلا استهلكت المحاولاتُ الثلاثُ نفسَ اللحظة التي أعطبت الأولى."""
+    return min(BACKOFF * (2 ** max(0, attempt - 1)), BACKOFF_MAX)
+
 # ───────────────────────── الوضع في الطابور ─────────────────────────
 
-def enqueue(c, user_id, kind, payload, reserved=None):
-    """يضع مهمّةً ويعيد سطرها. `reserved` ما حُجز من الحصّة لأجلها."""
+def live_for(c, key):
+    """المهمّة الحيّة بهذه البصمة، إن وُجدت."""
+    return c.execute("""SELECT * FROM jobs WHERE idem_key=?
+                        AND state IN ('queued','running')""", (key,)).fetchone()
+
+def enqueue(c, user_id, kind, payload, reserved=None, max_attempts=None):
+    """يضع مهمّةً ويعيد سطرها. `reserved` ما حُجز من الحصّة لأجلها.
+
+    ثلاثةُ حرّاسٍ قبل الدخول:
+      • **التفرّد** — طلبٌ مطابقٌ لمهمّةٍ حيّة يُردّ بها هي، فلا تُصيَّر مرّتين
+        ولا تُحجز الحصّة مرّتين. النقرةُ المزدوجة والشبكةُ المتقطّعة تصيران
+        بلا أثر.
+      • **طابور المستخدم** — لا يملأ حسابٌ واحدٌ الطابورَ على غيره.
+      • **حجم العمل** — سلسلةٌ أطول من الحدّ تُردّ بسببها لا تُقبل ثم تُعطب.
+    """
     if kind not in KINDS: raise JobError("نوع مهمّةٍ غير معروف")
+
+    key = idem_key(user_id, kind, payload)
+    cur = live_for(c, key)
+    if cur:
+        raise JobConflict(json.dumps({"duplicate": True, "job": view(cur)},
+                                     ensure_ascii=False))
+
+    n = c.execute("""SELECT COUNT(*) FROM jobs WHERE user_id=?
+                     AND state IN ('queued','running')""", (user_id,)).fetchone()[0]
+    if n >= MAX_QUEUED:
+        raise JobLimit(f"لك {n} مهامّ لم تنتهِ بعد. انتظر إحداها أو ألغِها "
+                       f"(الحدّ {MAX_QUEUED}).")
+
     t = store.now()
-    cur = c.execute("""INSERT INTO jobs(user_id,kind,payload,state,reserved,created_at)
-                       VALUES(?,?,?,'queued',?,?)""",
-                    (user_id, kind, json.dumps(payload, ensure_ascii=False),
-                     json.dumps(reserved or {}, ensure_ascii=False), t))
+    try:
+        c.execute("""INSERT INTO jobs(user_id,kind,payload,state,reserved,idem_key,
+                                      max_attempts,created_at)
+                     VALUES(?,?,?,'queued',?,?,?,?)""",
+                  (user_id, kind, json.dumps(payload, ensure_ascii=False),
+                   json.dumps(reserved or {}, ensure_ascii=False), key,
+                   MAX_RETRIES if max_attempts is None else max_attempts, t))
+    except sqlite3.IntegrityError:
+        # سباقٌ نادر: طلبان متزامنان بالبصمة نفسها. الفهرس الفريد حسم الأمر.
+        cur = live_for(c, key)
+        if cur: raise JobConflict(json.dumps({"duplicate": True, "job": view(cur)},
+                                             ensure_ascii=False))
+        raise
+    jid = c.execute("SELECT last_insert_rowid()").fetchone()[0]
     c.commit()
-    return get(c, user_id, cur.lastrowid)
+    return get(c, user_id, jid)
 
 def get(c, user_id, job_id):
     """لا يُقرأ إلا سطرُ صاحبه — رقمٌ مخمَّن لا يكشف عمل غيره."""
@@ -59,19 +153,21 @@ def view(r):
         "progress": r["progress"], "step": r["step"],
         "error": r["error"],
         "result": json.loads(r["result"]) if r["result"] else None,
-        "attempts": r["attempts"], "created_at": r["created_at"],
+        "attempts": r["attempts"], "max_attempts": r["max_attempts"],
+        "created_at": r["created_at"],
         "started_at": r["started_at"], "finished_at": r["finished_at"],
-        "waiting": r["state"] in ("queued", "running"),
+        "waiting": r["state"] not in TERMINAL,
+        "retry_after": max(0, (r["not_before"] or 0) - store.now()),
     }
 
 def cancel(c, user_id, job_id):
     """لا يُلغى إلا ما لم يبدأ — ما دخل التصيير يُترك ليكمل أو يفشل."""
     r = c.execute("SELECT * FROM jobs WHERE id=? AND user_id=?", (job_id, user_id)).fetchone()
     if not r: raise JobError("المهمّة غير موجودة")
-    if r["state"] != "queued":
+    if not can(r["state"], "canceled"):
         raise JobError("لا يُلغى إلا ما لم يبدأ بعد")
-    c.execute("UPDATE jobs SET state='canceled', finished_at=? WHERE id=?",
-              (store.now(), job_id))
+    c.execute("""UPDATE jobs SET state='canceled', step='أُلغيت', finished_at=?
+                 WHERE id=? AND state='queued'""", (store.now(), job_id))
     _refund(c, r)
     c.commit()
     return get(c, user_id, job_id)
@@ -87,13 +183,18 @@ def claim(path=None, worker=None):
         c.execute("PRAGMA foreign_keys=ON")
         c.execute("BEGIN IMMEDIATE")
         t = store.now()
-        r = c.execute("""SELECT * FROM jobs WHERE state='queued'
-                         ORDER BY created_at LIMIT 1""").fetchone()
+        # سقفُ التزامن: عاملٌ إضافيّ لا يبدأ عملًا خامسًا فيخنق الذاكرة
+        running = c.execute("SELECT COUNT(*) FROM jobs WHERE state='running'").fetchone()[0]
+        if running >= MAX_RUNNING:
+            c.execute("COMMIT"); return None
+        # `not_before` يحترم التراجع الأُسّيّ: المعادُ لا يُسحب قبل مهلته
+        r = c.execute("""SELECT * FROM jobs WHERE state='queued' AND not_before<=?
+                         ORDER BY created_at LIMIT 1""", (t,)).fetchone()
         if not r:
             c.execute("COMMIT"); return None
         c.execute("""UPDATE jobs SET state='running', attempts=attempts+1,
                      started_at=COALESCE(started_at,?), heartbeat=?, worker=?,
-                     progress=0, step='بدأ' WHERE id=?""",
+                     progress=0, step='بدأ' WHERE id=? AND state='queued'""",
                   (t, t, worker or me(), r["id"]))
         c.execute("COMMIT")
         return {"id": r["id"], "user_id": r["user_id"], "kind": r["kind"],
@@ -117,25 +218,34 @@ def beat(c, job_id, progress=None, step=None):
     c.commit()
 
 def complete(c, job_id, result):
+    _guard(c, job_id, "done")           # `done → done` أو `failed → done` لا يقع
     t = store.now()
     c.execute("""UPDATE jobs SET state='done', progress=100, step='تمّ',
-                 result=?, error=NULL, finished_at=?, heartbeat=? WHERE id=?""",
+                 result=?, error=NULL, finished_at=?, heartbeat=?
+                 WHERE id=? AND state='running'""",
               (json.dumps(result, ensure_ascii=False), t, t, job_id))
     c.commit()
 
 def fail(c, job_id, message, retry=True):
-    """يُعاد إلى الطابور ما لم تنفد المحاولات. وعند الفشل النهائيّ تُردّ
-    الحصّة المحجوزة — فلا يُحاسَب أحدٌ على عملٍ لم يخرج له."""
+    """يُعاد إلى الطابور ما لم تنفد المحاولات، بعد مهلةٍ تتضاعف. وعند الفشل
+    النهائيّ تُردّ الحصّة المحجوزة — فلا يُحاسَب أحدٌ على عملٍ لم يخرج له."""
     r = c.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
-    if not r: return
+    if not r: return None
+    # ليست جاريةً: إمّا انتهت، وإمّا أعادها `reap` بعدما ظُنّ العاملُ منقطعًا
+    # ثمّ أفاق فأبلغ عن فشله. في الحالتين لا تُمسّ — الأخير لا يهدم الأوّل.
+    if r["state"] != "running": return False
     t = store.now()
     again = retry and r["attempts"] < r["max_attempts"]
     if again:
-        c.execute("""UPDATE jobs SET state='queued', error=?, step='سيُعاد',
-                     heartbeat=? WHERE id=?""", (str(message)[:500], t, job_id))
+        wait = backoff_for(r["attempts"])
+        _guard(c, job_id, "queued")
+        c.execute("""UPDATE jobs SET state='queued', error=?, step=?,
+                     not_before=?, heartbeat=? WHERE id=? AND state='running'""",
+                  (str(message)[:500], f"سيُعاد بعد {wait}ث", t + wait, t, job_id))
     else:
+        _guard(c, job_id, "failed")
         c.execute("""UPDATE jobs SET state='failed', error=?, step='فشل',
-                     finished_at=?, heartbeat=? WHERE id=?""",
+                     finished_at=?, heartbeat=? WHERE id=? AND state='running'""",
                   (str(message)[:500], t, t, job_id))
         _refund(c, r)
     c.commit()
@@ -149,18 +259,30 @@ def _refund(c, r):
 def reap(c, stale=None):
     """يعيد إلى الطابور ما تركه عاملٌ توقّف. بلا هذا تبقى المهمّة «تجري»
     إلى الأبد إن قُتلت العملية في منتصفها."""
-    cut = store.now() - (stale if stale is not None else STALE)
+    t = store.now()
+    cut = t - (stale if stale is not None else STALE)
     rows = c.execute("""SELECT * FROM jobs WHERE state='running'
                         AND COALESCE(heartbeat, started_at, 0) < ?""", (cut,)).fetchall()
-    for r in rows:
+    # ومهمّةٌ تنبض لكنها تجاوزت سقفَ زمنها: عالقةٌ لا منقطعة، وتُقطع
+    stuck = c.execute("""SELECT * FROM jobs WHERE state='running'
+                         AND started_at IS NOT NULL AND started_at < ?""",
+                      (t - JOB_TIMEOUT,)).fetchall()
+    seen, n = set(), 0
+    for r, why in [(x, "انقطع العامل") for x in rows] + \
+                  [(x, f"تجاوزت سقف الزمن ({JOB_TIMEOUT}ث)") for x in stuck]:
+        if r["id"] in seen: continue
+        seen.add(r["id"]); n += 1
         if r["attempts"] < r["max_attempts"]:
-            c.execute("UPDATE jobs SET state='queued', step='انقطع العامل' WHERE id=?", (r["id"],))
+            c.execute("""UPDATE jobs SET state='queued', step=?, error=?, not_before=?
+                         WHERE id=? AND state='running'""",
+                      (why, why, t + backoff_for(r["attempts"]), r["id"]))
         else:
-            c.execute("""UPDATE jobs SET state='failed', error='انقطع العامل',
-                         finished_at=? WHERE id=?""", (store.now(), r["id"]))
+            c.execute("""UPDATE jobs SET state='failed', error=?, step='فشل',
+                         finished_at=? WHERE id=? AND state='running'""",
+                      (why, t, r["id"]))
             _refund(c, r)
     c.commit()
-    return len(rows)
+    return n
 
 def sweep(c, keep=None):
     """يحذف المنتهيةَ القديمة. الملفّات المصدَّرة تبقى — يُحذف سجلّ المهمّة لا ثمرتها."""
@@ -176,10 +298,34 @@ def stats(c):
         d[r["state"]] = r["n"]
     oldest = c.execute("SELECT MIN(created_at) FROM jobs WHERE state='queued'").fetchone()[0]
     d["oldest_wait"] = (store.now() - oldest) if oldest else 0
+    d["capacity"] = MAX_RUNNING
+    d["saturated"] = d["running"] >= MAX_RUNNING
+    # آخرُ نبضٍ من أيّ عامل — به تُعرف حياةُ العمّال من الخادم
+    hb = c.execute("SELECT MAX(heartbeat) FROM jobs").fetchone()[0]
+    d["last_worker_beat"] = hb
+    d["worker_silent_for"] = (store.now() - hb) if hb else None
     return d
 
 # ───────────────────────── تنفيذ المهمّة ─────────────────────────
 # المنطق هنا هو نفسه الذي كان في المسار، منقولًا لا مُعادًا كتابته.
+
+def _user_mb(here, user_id):
+    """ما يشغله صاحبُ الحساب من صادرات، بالميغابايت."""
+    root = os.path.join(here, "exports", str(user_id))
+    total = 0
+    for dirpath, _, files in os.walk(root):
+        for f in files:
+            try:    total += os.path.getsize(os.path.join(dirpath, f))
+            except OSError: pass
+    return total / 1048576
+
+def limits():
+    """الحدود النافذة الآن — تُعرض في `/app/limits` فيعرفها المستخدم قبل أن يصطدم بها."""
+    return {"max_queued_per_user": MAX_QUEUED, "max_running": MAX_RUNNING,
+            "max_cards_per_job": MAX_CARDS, "max_video_seconds": MAX_VIDEO_S,
+            "max_storage_mb_per_user": MAX_STORE_MB, "job_timeout_seconds": JOB_TIMEOUT,
+            "max_retries": MAX_RETRIES, "backoff_seconds": BACKOFF,
+            "stale_after_seconds": STALE}
 
 def perform(job, content_db, here, c=None):
     """يُصيّر فعليًّا. يُنادى من العامل ومن الاختبارات سواء."""
@@ -200,6 +346,12 @@ def perform(job, content_db, here, c=None):
             import carousel as CR
             if not st["items"]:      raise JobError("المشروع فارغ")
             if not st["exportable"]: raise JobError("فيه عناصر محجوبة أو منحرفة — راجعها أولًا")
+            if len(st["items"]) > MAX_CARDS:
+                raise JobLimit(f"السلسلة {len(st['items'])} بطاقة، والحدّ {MAX_CARDS} "
+                               f"في المهمّة الواحدة. قسّمها على مشروعين.")
+            if _user_mb(here, u["id"]) > MAX_STORE_MB:
+                raise JobLimit(f"بلغتَ حدّ التخزين ({MAX_STORE_MB} م.ب). "
+                               f"نزّل صادراتك القديمة ثم أعد المحاولة.")
             beat(c, job["id"], 10, "يُجهّز البطاقات")
             cards = []
             for i in st["items"]:
@@ -235,6 +387,9 @@ def perform(job, content_db, here, c=None):
                                    (reciter,)).fetchone():
                 raise JobError("القارئ غير مسجَّل")
             ref = it["ref"]
+            if _user_mb(here, u["id"]) > MAX_STORE_MB:
+                raise JobLimit(f"بلغتَ حدّ التخزين ({MAX_STORE_MB} م.ب). "
+                               f"نزّل صادراتك القديمة ثم أعد المحاولة.")
             outdir = os.path.join(here, "exports", str(u["id"]), str(pid))
             os.makedirs(outdir, exist_ok=True)
             out = os.path.join(outdir, f"clip_{ref['surah']}-{ref['ayah']}_{reciter}.mp4")
@@ -247,6 +402,10 @@ def perform(job, content_db, here, c=None):
                     proj["watermark"] or u["watermark"] or "قناتك", out)
             except SystemExit as e:
                 raise JobError(str(e))
+            if dur > MAX_VIDEO_S:
+                os.path.isfile(out) and os.remove(out)
+                raise JobLimit(f"المقطع {dur:.0f} ثانية، والحدّ {MAX_VIDEO_S}. "
+                               f"اختر آياتٍ أقلّ.")
             beat(c, job["id"], 90, "يُسجّل")
             P.record_export(c, u["id"], pid, "mp4", out, proj["ratio"], proj["skin"],
                             f"{rep['passed']}/{rep['total']}")
@@ -260,8 +419,25 @@ def perform(job, content_db, here, c=None):
         content.close()
         if own: c.close()
 
-# أخطاء المستخدم لا تُعاد محاولتها — المشروع الفارغ يبقى فارغًا مهما كُرِّر
-NO_RETRY = (JobError,)
+# ═══════════ تصنيف الأخطاء ═══════════
+# لا يُعاد إلا ما يُرجى أن ينجح في المرّة الثانية. إعادةُ خطأِ المستخدم
+# ثلاثَ مرّاتٍ تُنفق ثلاثةَ أضعاف الوقت لتصل إلى النتيجة نفسها.
+NO_RETRY = (
+    JobError,                 # وأبناؤها: JobConflict، JobLimit
+    ValueError, TypeError, KeyError,   # حمولةٌ فاسدة — لن تصلح بالتكرار
+    PermissionError, FileNotFoundError,
+)
+RETRYABLE = (
+    TimeoutError, ConnectionError, OSError,    # شبكةٌ أو قرصٌ أو قِدرٌ ممتلئ
+    sqlite3.OperationalError,                  # قاعدةٌ مقفلة لحظةً
+    MemoryError,
+)
+
+def retryable(exc):
+    """القاعدة: ما صُنِّف صراحةً بلا إعادة لا يُعاد، وما عداه يُعاد مرّتين.
+    المجهولُ يُعاد لأن أغلب المجهول عابر — وسقفُ المحاولات يحدّ الخسارة."""
+    if isinstance(exc, NO_RETRY): return False
+    return True
 
 def run_once(content_db, here, path=None, worker=None):
     """يسحب مهمّةً واحدة ويُنفّذها. يعيد المهمّة المنفَّذة أو None."""
@@ -271,12 +447,12 @@ def run_once(content_db, here, path=None, worker=None):
     try:
         try:
             res = perform(job, content_db, here, c)
-        except NO_RETRY as e:
-            fail(c, job["id"], str(e), retry=False)
-            return {**job, "ok": False, "error": str(e)}
         except Exception as e:
-            again = fail(c, job["id"], f"{type(e).__name__}: {e}", retry=True)
-            return {**job, "ok": False, "error": str(e), "requeued": bool(again)}
+            rt = retryable(e)
+            msg = str(e) if isinstance(e, JobError) else f"{type(e).__name__}: {e}"
+            again = fail(c, job["id"], msg, retry=rt)
+            return {**job, "ok": False, "error": msg,
+                    "retryable": rt, "requeued": bool(again)}
         # الحصّة حُجزت عند الوضع في الطابور، فلا تُستهلك هنا مرّةً ثانية.
         complete(c, job["id"], res)
         return {**job, "ok": True, "result": res}

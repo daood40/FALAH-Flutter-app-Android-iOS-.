@@ -6,7 +6,7 @@
 حتى يراجع الفرق بعينه. هذا امتدادٌ طبيعيّ لقاعدة التطبيق: لا شيء يُنشر
 دون أن يُعرف من أين جاء وهل تغيّر.
 """
-import json, sqlite3, os, sys
+import json, os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from . import store
 from . import verify as V

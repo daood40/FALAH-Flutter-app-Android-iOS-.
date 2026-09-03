@@ -4,8 +4,7 @@
 واجهة فلاح، فما يراه المستخدم هو ما يجري حقًا.
 القاعدة الحاكمة: سقوط فحص واحد ⇒ لا يُنتَج المحتوى.
 """
-from .text import fingerprint, tashkeel_ratio, has_hidden, searchable, norm
-import unicodedata
+from .text import fingerprint, tashkeel_ratio, has_hidden
 
 STAGES = ["أصل المصدر", "سلامة النص", "الموضع والإسناد", "سلامة المعنى", "الإخراج والحقوق"]
 

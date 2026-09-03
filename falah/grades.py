@@ -25,7 +25,7 @@ RELEASABLE = {"صحيح", "حسن", "حسن صحيح", "صحيح لغيره", "�
 PREFERRED = ["Al-Albani", "Ahmad Muhammad Shakir", "Zubair Ali Zai",
              "Bashar Awad Maarouf", "Salim al-Hilali"]
 
-def normalize(raw: str) -> str | None:
+def normalize(raw: str | None) -> str | None:   # يقبل الغائب ويردّ None
     return FAMILY.get((raw or "").strip().lower())
 
 def pick(grades: list[dict]):

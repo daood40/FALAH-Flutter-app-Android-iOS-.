@@ -1,5 +1,5 @@
 """يسحب أحاديث الموسوعة بشرحها وفوائدها وترجماتها."""
-import json, urllib.request, concurrent.futures as cf, time, os, sys
+import json, urllib.request, concurrent.futures as cf, time, os
 LANGS = ["ar", "en"]
 req = lambda u: urllib.request.Request(u, headers={"User-Agent":"Mozilla/5.0 (FALAH content builder)"})
 def get(u, tries=4):
@@ -14,7 +14,7 @@ for lang in LANGS:
     if os.path.exists(out) and os.path.getsize(out) > 50000: 
         print(f"{lang}: موجود"); continue
     t0 = time.time(); res = {}
-    def one(i):
+    def one(i, lang=lang):        # يُربط الآن لا عند النداء
         d = get(f"https://hadeethenc.com/api/v1/hadeeths/one/?language={lang}&id={i}")
         return i, d
     with cf.ThreadPoolExecutor(16) as ex:

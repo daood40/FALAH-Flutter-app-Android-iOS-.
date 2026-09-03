@@ -29,7 +29,7 @@ from urllib.parse import urlparse, parse_qs
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import unicodedata
-from falah.text import fingerprint, fts_query, search_variants, searchable
+from falah.text import fingerprint, search_variants, searchable
 from falah import verify as V
 from falah.audio import audio_url
 from falah.matn import matn_sane
@@ -135,7 +135,11 @@ def quran_card(c, surah, ayah, to=None, tafsir=False, translation=False, topic=N
         "cross_note": " · ".join(sorted({r["verify_status"] for r in rows})),
         "script_ok": True, "script_note": "الرسم العثماني",
         "locus_ok": True, "locus": f"{s['name_ar']} {ayah}–{to}",
-        "numbering_ok": all(r["ayah"] == n for r, n in zip(rows, range(ayah, to+1))),
+        # `zip` وحدها تقتطع عند الأقصر: لو نقصت آيةٌ من المدى لَمرّ الفحص
+        # على ما بقي وقال «متسلسل». العدد يُقارن أوّلًا ثم يُقارن كلُّ رقم.
+        "numbering_ok": (len(rows) == to - ayah + 1 and
+                         all(r["ayah"] == n for r, n in
+                             zip(rows, range(ayah, to+1), strict=True))),
         "numbering": "متسلسل",
         "grade_ok": True, "grade_note": src["riwayah"],
         "takhrij_ok": True, "takhrij_note": "موضع مفهرس بالصفحة والجزء",

@@ -6,7 +6,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 \
       libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libasound2 sqlite3 curl \
  && rm -rf /var/lib/apt/lists/*
-RUN pip install --no-cache-dir playwright==1.47.0 && playwright install chromium
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt && playwright install chromium
 
 WORKDIR /app
 COPY falah/ falah/
@@ -24,5 +25,10 @@ RUN python3 build.py && python3 tests.py && rm -rf raw
 VOLUME ["/data"]
 ENV FALAH_APP_DB=/data/app.db PORT=8080
 EXPOSE 8080
-HEALTHCHECK --interval=30s CMD curl -fsS http://localhost:8080/health || exit 1
+# فحص الحاوية = الحياة (`/healthz`): سؤالٌ رخيصٌ لا يلمس قاعدةً، وسقوطه
+# يعني عمليةً ميتةً تستحقّ إعادة تشغيل. أما الجاهزية (`/readyz`) فتُسأل من
+# الموازِن: سقوطها يعني سحبَ الحركة لا قتلَ الحاوية. و`/health` إحصاءٌ
+# للقاعدة — كان يُستدعى كل ٣٠ ثانية بلا داعٍ.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD curl -fsS http://localhost:8080/healthz || exit 1
 CMD ["python3","app.py"]

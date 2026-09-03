@@ -166,7 +166,6 @@ def delete_account(c, user_id, export_dir=None):
     """حذفٌ لا رجعة فيه: المستخدم وجلساته ومشاريعه وعناصرها وصادراته وسجلّه.
     وما صُدِّر من ملفاتٍ يُمحى من القرص كذلك، فلا يبقى أثرٌ للحساب.
     النصوص الشرعية في قاعدة المحتوى ليست ملكًا لحساب، فلا تُمسّ."""
-    import os
     rows = c.execute("SELECT path FROM exports WHERE user_id=?", (user_id,)).fetchall()
     pids = [r[0] for r in c.execute("SELECT id FROM projects WHERE user_id=?", (user_id,))]
     if pids:

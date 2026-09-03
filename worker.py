@@ -19,8 +19,37 @@ from falah import store, jobs as J
 
 DB   = os.environ.get("FALAH_DB", os.path.join(HERE, "falah.db"))
 IDLE = float(os.environ.get("FALAH_WORKER_IDLE", 1.0))   # فترة النوم حين يخلو الطابور
+# نبضةٌ على القرص: الحاوية تسأل عنها فتعرف أن العامل حيٌّ لا معلَّق. من دونها
+# يبقى عاملٌ متجمّدٌ «يعمل» في نظر المنسّق إلى الأبد، والطابور يتراكم صامتًا.
+# تُكتب بجوار `app.db` لا في `/tmp`: مسارٌ متوقَّعٌ في `/tmp` قابلٌ لأن
+# يسبقه غيرُك بوصلةٍ رمزية على نظامٍ مشترك، والحجم نفسه يضمن أن يراها
+# فحصُ الحاوية. مصدر الحقيقة واحد: حيث تعيش حالةُ التطبيق.
+BEAT = os.environ.get("FALAH_WORKER_BEAT") or os.path.join(
+    os.path.dirname(os.path.abspath(store.APP_DB)) or HERE, "worker.beat")
+BEAT_MAX = int(os.environ.get("FALAH_WORKER_BEAT_MAX", 120))
 
 _stop = threading.Event()
+
+def touch_beat():
+    try:
+        with open(BEAT, "w") as f: f.write(str(int(time.time())))
+    except OSError:
+        pass
+
+def healthcheck():
+    """يسقط إن لم يكتب العامل نبضةً منذ مدّة — فتُعيد الحاوية تشغيله.
+
+    الفرق عن سؤال «أالعملية موجودة؟»: العملية قد تكون موجودةً ومعلَّقة على
+    قفلٍ أو على شبكةٍ لا تردّ. النبضة تُكتب داخل الحلقة، فتوقّفُها يعني
+    توقّفَ العمل لا توقّفَ العملية.
+    """
+    try:
+        age = time.time() - float(open(BEAT).read().strip())
+    except Exception as e:
+        print(f"لا نبضة في {BEAT}: {type(e).__name__}"); return 1
+    if age > BEAT_MAX:
+        print(f"آخر نبضة قبل {age:.0f}ث (الحدّ {BEAT_MAX}) — العامل معلَّق"); return 1
+    print(f"حيّ — آخر نبضة قبل {age:.0f}ث"); return 0
 
 def log(msg):
     print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
@@ -29,6 +58,7 @@ def loop(name, once=False, drain=False):
     """حلقة عاملٍ واحد. تنام حين يخلو الطابور فلا تُشغل المعالج بلا عمل."""
     last_reap = 0.0
     while not _stop.is_set():
+        touch_beat()
         if time.time() - last_reap > 60:
             c = store.connect()
             try:
@@ -68,9 +98,11 @@ def main():
     ap.add_argument("--once",    action="store_true")
     ap.add_argument("--drain",   action="store_true")
     ap.add_argument("--status",  action="store_true")
+    ap.add_argument("--healthcheck", action="store_true")
     ap.add_argument("--workers", type=int, default=int(os.environ.get("FALAH_WORKERS", 1)))
     a = ap.parse_args()
 
+    if a.healthcheck: sys.exit(healthcheck())
     store.init()
     if a.status: return status()
 

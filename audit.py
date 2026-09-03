@@ -253,7 +253,7 @@ def audit_api(base):
         check(f"‎{path[:44]} → {s}", s in want, f"توقّع {want}")
         if d and isinstance(d, dict):
             txt = json.dumps(d, ensure_ascii=False)
-            check(f"  لا يسرّب أثر بايثون", "Traceback" not in txt and HERE not in txt, txt[:60])
+            check("  لا يسرّب أثر بايثون", "Traceback" not in txt and HERE not in txt, txt[:60])
 
 # ═════════════════ ٤ · أمان طبقة التطبيق ═════════════════
 def audit_app(base):

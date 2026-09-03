@@ -12,7 +12,7 @@
 يشترط ترويسة `X-FALAH: 1` — لا يرسلها نموذجٌ من موقعٍ آخر، فيسقط تزوير
 الطلبات عبر المواقع. والردود بترويسات تمنع التضمين وشمّ الأنواع.
 """
-import json, os, sqlite3, sys, urllib.parse
+import json, os, sqlite3, sys, time, urllib.parse
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from http.cookies import SimpleCookie
 
@@ -72,7 +72,21 @@ class App(BaseHTTPRequestHandler):
         self._headers(ctype, len(b), (list(extra) if extra else []) + [("Cache-Control", cache)])
         self.wfile.write(b)
 
-    def log_message(self, *a): pass
+    def log_message(self, *a): pass      # سجلّ الوصول صامت — لا يُسجَّل كل طلب
+
+    def log_error(self, fmt, *a):
+        """العطب يُسجَّل حيث نراه، لا يُرسل إلى المستخدم.
+
+        `BaseHTTPRequestHandler.log_error` يمرّ عبر `log_message` وقد أُسكت،
+        فلو تُرك لبقي «سُجّل عندنا» دعوى بلا سجلّ. سطرٌ لكل عطب على
+        stderr — تلتقطه الحاوية، ويكفي حتى تأتي المراقبة المهيكلة في P0-3.
+        """
+        try:
+            print(f"[{time.strftime('%Y-%m-%dT%H:%M:%S')}] ERROR "
+                  f"{self.client_address[0] if self.client_address else '-'} "
+                  + (fmt % a if a else fmt), file=sys.stderr, flush=True)
+        except Exception:
+            pass
 
     # ــــــــــــــــــــ الجلسة ــــــــــــــــــــ
 
@@ -141,6 +155,8 @@ class App(BaseHTTPRequestHandler):
                 return self.send_json({"error": "غير متاح"}, 404)
             ct = "font/woff2" if name.endswith(".woff2") else "font/ttf"
             return self.send_file(os.path.join(HERE, "fonts", name), ct)
+        if p == "/healthz":           return self.liveness()
+        if p == "/readyz":            return self.readiness()
         if p.startswith("/app/"):     return self.app_get(p)
         if any(p == x or p.startswith(x + "/") or p.startswith(x + "?") for x in CONTENT_PATHS):
             return self.proxy_content()
@@ -151,6 +167,50 @@ class App(BaseHTTPRequestHandler):
         if not p.startswith("/app/"):  return self.send_json({"error": "مسار غير معروف"}, 404)
         if not self.guard_csrf():      return self.send_json({"error": "طلب غير موثوق"}, 403)
         return self.app_post(p, body_json(self))
+
+    # ــــــــــــــــــــ الحياة والجاهزية ــــــــــــــــــــ
+    # الفرق ليس تجميلًا: `/healthz` يسأل «أحيَّةٌ العملية؟» فإن سقط أُعيد
+    # تشغيل الحاوية. و`/readyz` يسأل «أتصلح لاستقبال طلب؟» فإن سقط سُحبت
+    # من الموازِن ولم تُقتل. الخلط بينهما يعني إعادةَ تشغيلٍ لا تُصلح شيئًا،
+    # أو حاويةً ميتةً تُرسَل إليها الطلبات.
+
+    def liveness(self):
+        """لا يلمس قاعدةً ولا قرصًا — يثبت أن الخيط يردّ فقط."""
+        self.send_json({"live": True, "service": "falah-web"})
+
+    def readiness(self):
+        """يفحص ما يلزم لخدمة طلبٍ حقيقيّ: القاعدتان مقروءتان، والهجرات
+        مطبَّقة. ولا يُسقِط الجاهزيةَ صمتُ العمّال — الخادم يستقبل ويضع في
+        الطابور وإن لم يكن ثمّة عاملٌ الآن، والصمت يُبلَّغ لا يُخفى."""
+        out, ok = {"ready": True, "service": "falah-web"}, True
+        try:
+            cc = sqlite3.connect(f"file:{DB}?mode=ro", uri=True, timeout=3)
+            out["content_db"] = cc.execute("SELECT COUNT(*) FROM surahs").fetchone()[0] == 114
+            cc.close()
+            ok &= out["content_db"]
+        except Exception as e:
+            out["content_db"] = False; out["content_error"] = type(e).__name__; ok = False
+        try:
+            c = store.connect()
+            try:
+                c.execute("SELECT 1 FROM users LIMIT 1")
+                out["app_db"] = True
+                from falah import migrate as MG
+                out["pending_migrations"] = [f"{m[0]:03d}:{m[1]}" for m in MG.pending(c)]
+                q = JB.stats(c)
+                out["queue"] = {"queued": q["queued"], "running": q["running"],
+                                "oldest_wait": q["oldest_wait"],
+                                "worker_silent_for": q["worker_silent_for"]}
+                # عمّالٌ صامتون والطابور فيه عمل: تحذيرٌ يُقرأ، لا إسقاطُ جاهزية
+                out["worker_warning"] = bool(
+                    q["queued"] and (q["worker_silent_for"] is None
+                                     or q["worker_silent_for"] > JB.STALE))
+            finally:
+                c.close()
+        except Exception as e:
+            out["app_db"] = False; out["app_error"] = type(e).__name__; ok = False
+        out["ready"] = ok
+        self.send_json(out, 200 if ok else 503)
 
     # ــ قراءة ــ
 
@@ -191,9 +251,12 @@ class App(BaseHTTPRequestHandler):
                 rel = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("p", [""])[0]
                 return self.send_export_file(c, u, rel)
 
+            if p == "/app/limits":
+                return self.send_json(JB.limits())
+
             if p == "/app/jobs":
                 return self.send_json({"jobs": JB.listing(c, u["id"]),
-                                       "queue": JB.stats(c)})
+                                       "queue": JB.stats(c), "limits": JB.limits()})
 
             if p.startswith("/app/jobs/"):
                 # الاستطلاع: المتصفّح يسأل عن مهمّته حتى تنتهي
@@ -208,8 +271,15 @@ class App(BaseHTTPRequestHandler):
         except (P.ProjectError, auth.AuthError, billing.BillingError,
                 REF.ReferralError, JB.JobError) as e:
             self.send_json({"error": str(e)}, 400)
+        except (ValueError, TypeError) as e:
+            # رقمٌ نصّيّ أو حقلٌ من نوعٍ غير متوقَّع: خطأُ طلبٍ لا عطبُ خادم
+            self.log_error("bad request %s: %r", self.path, e)
+            self.send_json({"error": "قيمةٌ غير صالحة في الطلب"}, 400)
         except Exception as e:
-            self.send_json({"error": type(e).__name__ + ": " + str(e)}, 500)
+            # تفصيل العطب يُسجَّل عندنا ولا يُرسل: نصّ الاستثناء يصف بنيةَ
+            # الشيفرة، وهو نصفُ خريطةٍ لمن يبحث عن ثغرة.
+            self.log_error("internal %s: %s: %s", self.path, type(e).__name__, e)
+            self.send_json({"error": "خطأ داخلي"}, 500)
         finally:
             c.close()
 
@@ -384,6 +454,9 @@ class App(BaseHTTPRequestHandler):
                 return self.video(c, content, u, int(b["project"]), int(b["item"]),
                                   b.get("reciter", "alafasy"))
 
+            if p == "/app/jobs/cancel":
+                return self.send_json({"job": JB.cancel(c, u["id"], int(b["id"]))})
+
             if p == "/app/items/accept-drift":
                 P.accept_drift(c, content, u["id"], int(b["project"]), int(b["id"]))
                 return self.send_json({"ok": True})
@@ -394,8 +467,15 @@ class App(BaseHTTPRequestHandler):
             self.send_json({"error": str(e)}, 400)
         except KeyError as e:
             self.send_json({"error": "حقل ناقص: " + str(e)}, 400)
+        except (ValueError, TypeError) as e:
+            # رقمٌ نصّيّ أو حقلٌ من نوعٍ غير متوقَّع: خطأُ طلبٍ لا عطبُ خادم
+            self.log_error("bad request %s: %r", self.path, e)
+            self.send_json({"error": "قيمةٌ غير صالحة في الطلب"}, 400)
         except Exception as e:
-            self.send_json({"error": type(e).__name__ + ": " + str(e)}, 500)
+            # تفصيل العطب يُسجَّل عندنا ولا يُرسل: نصّ الاستثناء يصف بنيةَ
+            # الشيفرة، وهو نصفُ خريطةٍ لمن يبحث عن ثغرة.
+            self.log_error("internal %s: %s: %s", self.path, type(e).__name__, e)
+            self.send_json({"error": "خطأ داخلي"}, 500)
         finally:
             if content: content.close()
             c.close()
@@ -417,8 +497,23 @@ class App(BaseHTTPRequestHandler):
         billing.check(c, u["id"], "cards", n)
         billing.require(c, u["id"], "ratios", proj["ratio"], what="هذا المقاس")
         billing.require(c, u["id"], "designs", proj["skin"], what="هذا التصميم")
+        # التفرّد يُفحص قبل حجز الحصّة: نقرتان لا تستهلكان بطاقاتٍ مرّتين
+        dup = JB.live_for(c, JB.idem_key(u["id"], "export", {"project": pid}))
+        if dup:
+            return self.send_json({"job": JB.view(dup), "duplicate": True,
+                                   "note": "هذا التصدير في الطابور بالفعل"}, 202)
         billing.consume(c, u["id"], "cards", n)
-        job = JB.enqueue(c, u["id"], "export", {"project": pid}, {"cards": n})
+        try:
+            job = JB.enqueue(c, u["id"], "export", {"project": pid}, {"cards": n})
+        except JB.JobConflict as e:
+            # سباقٌ بين الفحص أعلاه والإدراج: طلبان متزامنان بالبصمة نفسها.
+            # الفهرس الفريد حسمه، فيُردّ الثاني بالمهمّة القائمة — لا بخطأ.
+            billing.release(c, u["id"], "cards", n)
+            return self.send_json({**json.loads(str(e)),
+                                   "note": "هذا التصدير في الطابور بالفعل"}, 202)
+        except JB.JobError:
+            billing.release(c, u["id"], "cards", n)     # لم تدخل الطابور فلا تُحاسَب
+            raise
         store.log(c, u["id"], "export_queued", f"{pid}:{job['id']}"); c.commit()
         self.send_json({"job": job, "cards": n,
                         "note": "التصدير في الطابور — تابِع حالته"}, 202)
@@ -437,11 +532,22 @@ class App(BaseHTTPRequestHandler):
         if not r:                  return self.send_json({"error": "القارئ غير مسجَّل"}, 400)
         billing.check(c, u["id"], "videos")
         billing.require(c, u["id"], "ratios", st["project"]["ratio"], what="هذا المقاس")
+        pay = {"project": pid, "item": item_id, "reciter": reciter}
+        dup = JB.live_for(c, JB.idem_key(u["id"], "video", pay))
+        if dup:
+            return self.send_json({"job": JB.view(dup), "duplicate": True,
+                                   "note": "هذا المقطع في الطابور بالفعل"}, 202)
         billing.consume(c, u["id"], "videos")
-        job = JB.enqueue(c, u["id"], "video",
-                         {"project": pid, "item": item_id, "reciter": reciter},
-                         {"videos": 1})
-        store.log(c, u["id"], "video_queued", f"{pid}:{item_id}:{job['id']}"); c.commit()
+        try:
+            job = JB.enqueue(c, u["id"], "video", pay, {"videos": 1})
+        except JB.JobConflict as e:
+            billing.release(c, u["id"], "videos", 1)
+            return self.send_json({**json.loads(str(e)),
+                                   "note": "هذا المقطع في الطابور بالفعل"}, 202)
+        except JB.JobError:
+            billing.release(c, u["id"], "videos", 1)
+            raise
+        store.log(c, u["id"], "video_queued", f"{pid}:{item_id}:{job['id']}"); c.commit()  # noqa
         self.send_json({"job": job, "note": "المقطع في الطابور — تابِع حالته"}, 202)
 
     def send_export_file(self, c, u, rel):

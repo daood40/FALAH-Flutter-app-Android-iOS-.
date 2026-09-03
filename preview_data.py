@@ -5,7 +5,7 @@
 
     python3 preview_data.py            → preview-data.json + preview-data.b64
 """
-import base64, gzip, json, os, sqlite3, sys
+import base64, gzip, json, os, sqlite3
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DB   = os.path.join(HERE, "falah.db")

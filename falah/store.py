@@ -186,13 +186,20 @@ CREATE TABLE IF NOT EXISTS jobs(
   result       TEXT,                           -- JSON: نفس ردّ المسار القديم
   worker       TEXT,
   reserved     TEXT,                           -- JSON: الحصّة المحجوزة، تُردّ عند الفشل
+  idem_key     TEXT,                           -- بصمة (صاحب+نوع+حمولة): تمنع التكرار
+  not_before   INTEGER NOT NULL DEFAULT 0,     -- لا تُسحب قبل هذا الوقت (تراجعٌ أُسّيّ)
   created_at   INTEGER NOT NULL,
   started_at   INTEGER,
   finished_at  INTEGER,
-  heartbeat    INTEGER                         -- نبضٌ لكشف العامل المتوقّف
+  heartbeat    INTEGER,                        -- نبضٌ لكشف العامل المتوقّف
+  CHECK (state IN ('queued','running','done','failed','canceled')),
+  CHECK (attempts >= 0 AND attempts <= max_attempts + 1),
+  CHECK (progress BETWEEN 0 AND 100)
 );
-CREATE INDEX IF NOT EXISTS ix_jobs_queue ON jobs(state, created_at);
-CREATE INDEX IF NOT EXISTS ix_jobs_user  ON jobs(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS ix_jobs_user ON jobs(user_id, created_at DESC);
+-- فهرسا الطابور ومفتاح التفرّد يملكهما `falah/migrate.py` وحده. السبب:
+-- `CREATE INDEX` على عمودٍ جديد يسقط على قاعدةٍ أُنشئت قبله، و`SCHEMA`
+-- تُنفَّذ على القواعد القائمة أيضًا. الهجرات تُضيف العمود ثم الفهرس بترتيبه.
 """
 
 
@@ -205,10 +212,19 @@ def connect(path=None):
     c.execute("PRAGMA foreign_keys=ON")
     return c
 
-def init(path=None):
+def init(path=None, migrate=True):
+    """يُنشئ ما ينقص من الجداول ثم يطبّق الهجرات الآمنة.
+
+    الخطوتان لازمتان معًا: `SCHEMA` تُنشئ الجدولَ المفقود ولا تمسّ الموجود،
+    فقاعدةٌ أُنشئت قبل عمودٍ جديد تبقى بلا العمود. الهجرات تسدّ هذا الفرق.
+    والهادمة منها لا تجري هنا أبدًا — تُطلب صراحةً بـ`python3 -m falah.migrate`.
+    """
     c = connect(path)
     c.executescript(SCHEMA)
     c.commit()
+    if migrate:
+        from . import migrate as MG
+        MG.run(c, allow_destructive=False, quiet=True)
     return c
 
 def now():

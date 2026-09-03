@@ -11,7 +11,7 @@
 """
 import argparse, json, os, sqlite3, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import api, render as R
+import render as R
 from api import arabic_num
 
 DB = R.DB
@@ -38,7 +38,7 @@ def topic_jobs(c, topic, kind, count):
                          f"h{r['code']}-{r['number_in_book']}"))
     if kind == "mixed":                      # آية ثم حديث ثم آية… تنويعًا للعين
         q = [j for j in jobs if j[0] == "quran"]; h = [j for j in jobs if j[0] == "hadith"]
-        jobs = [x for pair in zip(q + [None]*len(h), h + [None]*len(q)) for x in pair if x][:count]
+        jobs = [x for pair in zip(q + [None]*len(h), h + [None]*len(q), strict=True) for x in pair if x][:count]
     return jobs[:count]
 
 def parse_items(spec):

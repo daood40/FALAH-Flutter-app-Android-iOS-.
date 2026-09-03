@@ -9,7 +9,7 @@
 المزوّد لا يُثق به على عِلّاته: كل إيصالٍ يُسجَّل كما ورد في `receipts`،
 والحقّ يُشتقّ من حالة الاشتراك عندنا لا من كلمة العميل.
 """
-import hashlib, json, os, secrets, sys, time
+import json, os, sys, time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from falah import store
 

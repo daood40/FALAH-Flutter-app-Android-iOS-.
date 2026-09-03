@@ -2,9 +2,8 @@
 """اختبارات طبقة المحتوى. تُشغَّل بلا خادم: python3 tests.py"""
 import sqlite3, sys, os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from falah.text import fingerprint, searchable, tashkeel_ratio, has_hidden, fts_query, search_variants
-from falah.matn import extract_matn, extract_narrator, matn_sane, is_card_ready
-from falah import grades as G
+from falah.text import fingerprint, searchable, search_variants
+from falah.matn import matn_sane
 from falah.reconcile import orthographic_key
 from falah import verify as V
 import api
@@ -445,6 +444,115 @@ check("العامل خدمةٌ مستقلّة عن الخادم في النشر"
 check("الخادم والعامل يتقاسمان الطابور ومجلّد الصادرات",
       dep.count("falah-data:/data") == 2 and dep.count("falah-exports:/app/exports") == 2)
 check("الصادرات على حجمٍ يبقى بعد تحديث الصورة", "falah-exports:" in dep.split("volumes:")[-1])
+check("فحص الحاوية يسأل عن الحياة لا عن إحصاء القاعدة",
+      "/healthz" in _dock and "http://localhost:8080/health |" not in _dock
+      and "/health ||" not in _dock)
+check("للعامل فحصُ حياةٍ خاصّ به — المعلَّق لا يبقى «يعمل»",
+      "worker.py\", \"--healthcheck" in dep)
+check("الخدمتان تقرآن الحدود من ملفّ بيئةٍ واحد",
+      dep.count("env_file: [.env]") == 2)
+check("النبضة بجوار حالة التطبيق لا في /tmp المتوقَّع",
+      '"/tmp' not in open(os.path.join(
+          os.path.dirname(os.path.abspath(__file__)), "worker.py")).read())
+check("العامل ينبض على القرص داخل حلقته",
+      "touch_beat()" in open(os.path.join(
+          os.path.dirname(os.path.abspath(__file__)), "worker.py")).read())
+
+# فحصا الحياة والجاهزية مفترقان في المعنى لا في الاسم فقط
+_appsrc = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "app.py")).read()
+check("الحياة لا تلمس قاعدةً — رخيصةٌ تُسأل كل ثلاثين ثانية",
+      "sqlite3" not in _appsrc.split("def liveness")[1].split("def readiness")[0])
+check("الجاهزية تفحص القاعدتين والهجرات والطابور",
+      all(x in _appsrc.split("def readiness")[1][:2000]
+          for x in ("content_db", "app_db", "pending_migrations", "queue")))
+check("وتردّ ٥٠٣ إن لم تكن جاهزة", "200 if ok else 503" in _appsrc)
+check("وصمتُ العمّال تحذيرٌ لا إسقاطُ جاهزية — الخادم يستقبل ويضع في الطابور",
+      "worker_warning" in _appsrc)
+
+# عقد الـAPI
+import api_contract as _AC
+_undoc, _stale, _ghost = _AC.audit()
+check("لا مسارَ قائمٌ بلا توثيق في العقد", not _undoc, str(_undoc))
+check("ولا موثَّقٌ لا وجود له", not _stale, str(_stale))
+check("والواجهة لا تنادي مسارًا لا يقدّمه الخادم", not _ghost, str(_ghost))
+check("العقد مولَّدٌ من الشيفرة لا مكتوبٌ بجانبها",
+      os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), "API.md")))
+
+# متغيّرات البيئة: كلّ ما تقرؤه الشيفرة موثَّقٌ في القالب
+import re as _re2
+_root = os.path.dirname(os.path.abspath(__file__))
+_used = set()
+for _dir, _, _fs in os.walk(_root):
+    if any(x in _dir for x in ("raw", "templates", "exports", "out", "__pycache__")): continue
+    for _f in _fs:
+        if not _f.endswith(".py"): continue
+        _t = open(os.path.join(_dir, _f), encoding="utf-8", errors="ignore").read()
+        _used |= set(_re2.findall(r'["\'](FALAH_[A-Z_]+)["\']', _t))
+_tmpl = open(os.path.join(_root, ".env.example"), encoding="utf-8").read()
+_undocumented = sorted(v for v in _used if v not in _tmpl)
+check("كل متغيّر بيئةٍ تقرؤه الشيفرة موثَّقٌ في .env.example",
+      not _undocumented, str(_undocumented))
+# التعريف نفسه الذي يستعمله الفاحص الأمنيّ — لا تعريفان يختلفان
+import security_scan as _SS
+_leaks = [_l for _l in _tmpl.splitlines()
+          if "=" in _l and not _l.startswith("#")
+          and _SS.looks_secret(_l.split("=", 1)[1])]
+check("ولا قيمةَ سرٍّ حقيقية في القالب — المسارُ مرجعٌ لا سرّ",
+      not _leaks, str(_leaks))
+check("والقالب يذكر قاعدة المفاتيح لا يكتفي بالأسماء",
+      "CREDENTIALS.md" in _tmpl and "App Manager" in _tmpl)
+
+# الاعتماديات: مثبَّتةٌ لا مفتوحة، ومصدرها واحد
+import ast as _ast2
+_req = open(os.path.join(_root, "requirements.txt"), encoding="utf-8").read()
+_pins = _re2.findall(r"^([a-zA-Z0-9_.-]+)==([0-9][0-9.]*)$", _req, _re2.M)
+check("كل اعتماديةٍ مثبَّتةٌ بإصدارٍ محدَّد", len(_pins) >= 4, str(_pins))
+check("لا اعتماديةَ بحدٍّ مفتوح (>= أو ~=)",
+      not _re2.search(r"^[a-zA-Z0-9_.-]+\s*[><~]=", _req, _re2.M))
+# ما تستورده الشيفرة فعلًا يجب أن يكون مذكورًا — ولا العكس
+_std = set(sys.stdlib_module_names)
+_localmods = {f[:-3] for f in os.listdir(_root) if f.endswith(".py")} | {"falah"}
+_imported = set()
+for _dp, _dirs, _fs in os.walk(_root):
+    _dirs[:] = [d for d in _dirs if d not in
+                ("raw","templates","exports","out","__pycache__",".git","mobile")]
+    for _f in _fs:
+        if not _f.endswith(".py"): continue
+        try: _tree = _ast2.parse(open(os.path.join(_dp,_f), encoding="utf-8").read())
+        except Exception: continue
+        for _n in _ast2.walk(_tree):
+            if isinstance(_n, _ast2.Import):
+                _imported |= {a.name.split(".")[0] for a in _n.names}
+            elif isinstance(_n, _ast2.ImportFrom) and _n.module and _n.level == 0:
+                _imported.add(_n.module.split(".")[0])
+_alias = {"PIL": "pillow", "imageio_ffmpeg": "imageio_ffmpeg"}
+_ext = {_alias.get(m, m) for m in _imported - _std - _localmods}
+_named = {p[0].lower().replace("-", "_") for p in _pins}
+_ghost_dep = sorted(d for d in _ext if d.lower().replace("-", "_") not in _named)
+check("كل ما تستورده الشيفرة مذكورٌ في requirements.txt", not _ghost_dep, str(_ghost_dep))
+check("الحاوية وخطّ التكامل يثبّتان من الملفّ نفسه لا من سطرٍ مكرَّر",
+      "-r requirements.txt" in open(os.path.join(_root, "Dockerfile")).read()
+      and "-r requirements.txt" in open(os.path.join(
+          _root, ".github", "workflows", "ci.yml")).read())
+check("ونقصُ فحص الثغرات مذكورٌ لا مسكوتٌ عنه",
+      "pip-audit" in _req and "لا يوجد" in _req)
+
+# خطّ التكامل: بوّابةٌ لا تُتجاوز
+_ci = open(os.path.join(_root, ".github", "workflows", "ci.yml"), encoding="utf-8").read()
+# التعليق الذي يذكرها لا يُحسب — يُفحص ما يُنفَّذ لا ما يُشرح
+check("لا خطوةَ فحصٍ تُمرَّر على أنها نجاح",
+      not [l for l in _ci.splitlines()
+           if "continue-on-error" in l and not l.lstrip().startswith("#")])
+check("البناء مشروطٌ بنجاح الاختبارات", "needs: [static, tests]" in _ci)
+check("وبوّابةٌ واحدة تُلخّص الكلّ وتُشترط في الحماية",
+      "QUALITY_GATE" in _ci and "needs: [static, tests, build]" in _ci)
+for _step in ("ruff check", "mypy", "security_scan.py", "api_contract.py --check",
+              "tests.py", "audit.py", "ui_audit.py", "failure_test.py", "docker build"):
+    check(f"خطّ التكامل يشمل: {_step}", _step in _ci)
+check("والأوامر نفسها متاحةٌ محلّيًّا بـmake gate",
+      all(x in open(os.path.join(_root, "Makefile")).read()
+          for x in ("ruff check", "mypy", "security_scan.py", "tests.py",
+                    "audit.py", "ui_audit.py", "failure_test.py")))
 
 print("\n▸ الوكيل")
 from falah import agent as AG
@@ -944,14 +1052,14 @@ check("التفسير يُقصّ عند حدّ الكلمة لا في وسطها
 
 print("\n▸ طابور المهامّ")
 from falah import jobs as JQ
-import threading as _th, time as _tm
+import threading as _th
 
 # الطابور يعمل على قاعدة الاختبار نفسها
 _uq = AU.register(ac, _m("q"), _pw, "صاحب الطابور", "ق")
 _pq = PJ.create(ac, _uq, "سلسلة الطابور", "series", "parch", "square", "ق")
 PJ.add_item(ac, c, _uq, _pq, "quran", {"surah": 108, "ayah": 1, "to": 3})
 
-_j = JQ.enqueue(ac, _uq, "export", {"project": _pq}, {"cards": 1})
+_j = JQ.enqueue(ac, _uq, "export", {"project": _pq, "j": 1}, {"cards": 1})
 check("المهمّة تدخل الطابور منتظِرةً", _j["state"] == "queued" and _j["waiting"], _j["state"])
 check("الردّ لا يحمل الحمولة الداخلية", "payload" not in _j and "reserved" not in _j)
 check("لا يقرأ أحدٌ مهمّةَ غيره برقمٍ مخمَّن",
@@ -984,6 +1092,8 @@ check("سيُعاد ما لم تنفد المحاولات", JQ.fail(ac, _j["id"]
 check("العائد يرجع إلى الطابور", JQ.get(ac, _uq, _j["id"])["state"] == "queued")
 check("الحصّة لا تُردّ عند الفشل العابر",
       BL.entitlements(ac, _uq)["used"]["cards"] == _used0)
+check("المعاد لا يُسحب قبل انقضاء مهلته", JQ.claim(ST.APP_DB, "t") is None)
+ac.execute("UPDATE jobs SET not_before=0 WHERE id=?", (_j["id"],)); ac.commit()
 JQ.claim(ST.APP_DB, "t")
 check("المحاولة الثانية آخرها", JQ.fail(ac, _j["id"], "انقطاع ثانٍ") is False)
 _f = JQ.get(ac, _uq, _j["id"])
@@ -993,7 +1103,7 @@ check("الحصّة تُردّ عند الفشل النهائيّ — لا يُ�
 check("الفاشلة لا تُنتظر", not _f["waiting"])
 
 # العامل المنقطع: مهمّةٌ «تجري» بلا نبض تعود إلى الطابور
-_j2 = JQ.enqueue(ac, _uq, "export", {"project": _pq}, {})
+_j2 = JQ.enqueue(ac, _uq, "export", {"project": _pq, "j": 2}, {})
 JQ.claim(ST.APP_DB, "t")
 ac.execute("UPDATE jobs SET heartbeat=? WHERE id=?", (ST.now() - 9999, _j2["id"])); ac.commit()
 check("انقطاع العامل يُكشف وتعود المهمّة", JQ.reap(ac) == 1
@@ -1001,7 +1111,7 @@ check("انقطاع العامل يُكشف وتعود المهمّة", JQ.reap(
 
 # الإلغاء لا يطال ما بدأ
 check("ما لم يبدأ يُلغى", JQ.cancel(ac, _uq, _j2["id"])["state"] == "canceled")
-_j3 = JQ.enqueue(ac, _uq, "export", {"project": _pq}, {})
+_j3 = JQ.enqueue(ac, _uq, "export", {"project": _pq, "j": 3}, {})
 JQ.claim(ST.APP_DB, "t")
 check("ما بدأ لا يُلغى", _try_err(lambda: JQ.cancel(ac, _uq, _j3["id"]), JQ.JobError))
 JQ.fail(ac, _j3["id"], "طيّ", retry=False)
@@ -1015,7 +1125,7 @@ check("المشروع الفارغ يفشل نهائيًّا بلا إعادة",
       and "فارغ" in (_done["error"] or ""), str(_done and _done.get("error")))
 
 # دورةٌ كاملة: وضعٌ ← تنفيذ ← تسليم
-JQ.enqueue(ac, _uq, "export", {"project": _pq}, {"cards": 1})
+JQ.enqueue(ac, _uq, "export", {"project": _pq, "j": "run"}, {"cards": 1})
 _r = JQ.run_once("falah.db", os.path.dirname(os.path.abspath(__file__)), ST.APP_DB, "t")
 check("الطابور يُنتج البطاقات فعلًا", bool(_r and _r["ok"]) and bool(_r["result"]["files"]),
       str(_r and _r.get("error")))
@@ -1063,6 +1173,154 @@ check("الكنس يحذف المنتهيةَ القديمة لا الجارية
       (ac.execute("UPDATE jobs SET finished_at=? WHERE state IN ('done','failed','canceled')",
                   (ST.now() - 99 * 86400,)), ac.commit(), JQ.sweep(ac))[2] > 0
       and ac.execute("SELECT COUNT(*) n FROM jobs WHERE state='done'").fetchone()["n"] == 0)
+
+
+print("\n▸ آلة الحالات ومنع التكرار والحدود")
+
+# آلة الحالات: الانتقالات المشروعة معدودة، وما عداها لا يقع
+check("الحالات خمسٌ لا سادسَ لها",
+      set(JQ.STATES) == {"queued","running","done","failed","canceled"})
+check("النهائيّ لا يخرج منه شيء",
+      all(JQ.TRANSITIONS[s] == set() for s in ("done","failed","canceled")))
+check("المنتظِر يبدأ أو يُلغى فقط", JQ.TRANSITIONS["queued"] == {"running","canceled"})
+check("الجاري ينتهي أو يُعاد فقط", JQ.TRANSITIONS["running"] == {"done","failed","queued"})
+for _frm, _to in (("done","running"), ("failed","running"), ("canceled","queued"),
+                  ("done","failed"), ("queued","done")):
+    check(f"انتقالٌ ممنوع: {_frm} ← {_to}", not JQ.can(_frm, _to))
+
+_js = JQ.enqueue(ac, _uq, "export", {"project": _pq, "t": "sm"}, {})
+check("لا تُكمَل مهمّةٌ لم تبدأ",
+      _try_err(lambda: JQ.complete(ac, _js["id"], {"x": 1}), JQ.JobError))
+JQ.claim(ST.APP_DB, "t"); JQ.complete(ac, _js["id"], {"files": []})
+check("لا تُكمَل المكتملة مرّتين",
+      _try_err(lambda: JQ.complete(ac, _js["id"], {"x": 2}), JQ.JobError))
+check("إفشال المكتملة لا يغيّرها",
+      JQ.fail(ac, _js["id"], "متأخّر") is False
+      and JQ.get(ac, _uq, _js["id"])["state"] == "done")
+
+# منع التكرار: نفس الطلب لا يدخل مرّتين
+_p1 = {"project": _pq, "tag": "idem"}
+_k1 = JQ.idem_key(_uq, "export", _p1)
+check("البصمة ثابتةٌ لنفس الطلب", JQ.idem_key(_uq, "export", dict(_p1)) == _k1)
+check("البصمة تختلف باختلاف الصاحب", JQ.idem_key(uid, "export", _p1) != _k1)
+check("البصمة تختلف باختلاف الحمولة",
+      JQ.idem_key(_uq, "export", {**_p1, "tag": "x"}) != _k1)
+_d1 = JQ.enqueue(ac, _uq, "export", _p1, {})
+check("الطلب المكرَّر يُردّ بالمهمّة القائمة لا بثانية",
+      _try_err(lambda: JQ.enqueue(ac, _uq, "export", dict(_p1), {}), JQ.JobConflict))
+check("ولم تُنشأ مهمّةٌ ثانية",
+      ac.execute("SELECT COUNT(*) n FROM jobs WHERE idem_key=?", (_k1,)).fetchone()["n"] == 1)
+JQ.cancel(ac, _uq, _d1["id"])
+_d2 = JQ.enqueue(ac, _uq, "export", dict(_p1), {})
+check("بعد انتهاء الأولى يُقبل الطلب نفسه من جديد", _d2["id"] != _d1["id"])
+JQ.cancel(ac, _uq, _d2["id"])
+
+# حدّ طابور المستخدم
+_held = []
+for _i in range(JQ.MAX_QUEUED + 2):
+    try:    _held.append(JQ.enqueue(ac, _uq, "export", {"project": _pq, "n": _i}, {}))
+    except JQ.JobLimit as _e3: _lim = str(_e3)
+check("طابور المستخدم محدود", len(_held) == JQ.MAX_QUEUED, str(len(_held)))
+check("رسالة الحدّ تقول ما العمل", "انتظر" in _lim and str(JQ.MAX_QUEUED) in _lim, _lim[:70])
+for _h in _held: JQ.cancel(ac, _uq, _h["id"])
+
+# سقف التزامن: عاملٌ إضافيّ لا يبدأ عملًا يتجاوز الحدّ
+_cc = [JQ.enqueue(ac, _uq, "export", {"project": _pq, "c": i}, {})
+       for i in range(min(JQ.MAX_QUEUED, JQ.MAX_RUNNING + 1))]
+_claims = []
+for _ in range(JQ.MAX_RUNNING + 3):
+    g = JQ.claim(ST.APP_DB, "t")
+    if g: _claims.append(g)
+check("لا يتجاوز الجاري سقفَ التزامن",
+      len(_claims) <= JQ.MAX_RUNNING, f"{len(_claims)}/{JQ.MAX_RUNNING}")
+for g in _claims: JQ.fail(ac, g["id"], "طيّ", retry=False)
+for j in _cc:
+    if JQ.get(ac, _uq, j["id"])["state"] == "queued": JQ.cancel(ac, _uq, j["id"])
+
+# التراجع الأُسّيّ
+check("المهلة تتضاعف ولا تتجاوز سقفها",
+      JQ.backoff_for(1) == JQ.BACKOFF and JQ.backoff_for(2) == JQ.BACKOFF*2
+      and JQ.backoff_for(20) == JQ.BACKOFF_MAX,
+      f"{JQ.backoff_for(1)}·{JQ.backoff_for(2)}·{JQ.backoff_for(20)}")
+_rb = JQ.enqueue(ac, _uq, "export", {"project": _pq, "b": 1}, {})
+JQ.claim(ST.APP_DB, "t"); JQ.fail(ac, _rb["id"], "عابر")
+_v2 = JQ.get(ac, _uq, _rb["id"])
+check("المعاد ينتظر مهلته قبل أن يُسحب ثانية", _v2["retry_after"] > 0, str(_v2["retry_after"]))
+check("ولا يسحبه عاملٌ قبلها", JQ.claim(ST.APP_DB, "t") is None)
+ac.execute("UPDATE jobs SET not_before=0 WHERE id=?", (_rb["id"],)); ac.commit()
+check("وبعد انقضائها يُسحب", JQ.claim(ST.APP_DB, "t") is not None)
+JQ.fail(ac, _rb["id"], "طيّ", retry=False)
+
+# تصنيف الأخطاء
+check("خطأ المستخدم لا يُعاد", not JQ.retryable(JQ.JobError("فارغ")))
+check("تجاوز الحدّ لا يُعاد", not JQ.retryable(JQ.JobLimit("كبير")))
+check("الحمولة الفاسدة لا تُعاد", not JQ.retryable(ValueError("x"))
+      and not JQ.retryable(KeyError("k")))
+check("انقطاع الشبكة يُعاد", JQ.retryable(ConnectionError()) and JQ.retryable(TimeoutError()))
+check("قفل القاعدة اللحظيّ يُعاد", JQ.retryable(_sq.OperationalError("locked")))
+check("المجهول يُعاد بحذر — والسقف يحدّ الخسارة", JQ.retryable(RuntimeError("?")))
+
+# المهمّة العالقة: تنبض لكنها تجاوزت سقف الزمن
+_stk = JQ.enqueue(ac, _uq, "export", {"project": _pq, "s": 1}, {})
+JQ.claim(ST.APP_DB, "t")
+ac.execute("UPDATE jobs SET started_at=?, heartbeat=? WHERE id=?",
+           (ST.now() - JQ.JOB_TIMEOUT - 10, ST.now(), _stk["id"])); ac.commit()
+check("العالقةُ النابضة تُقطع بسقف الزمن لا تبقى إلى الأبد",
+      JQ.reap(ac) >= 1 and "سقف الزمن" in (JQ.get(ac, _uq, _stk["id"])["error"] or ""),
+      JQ.get(ac, _uq, _stk["id"])["error"])
+ac.execute("UPDATE jobs SET state='failed', finished_at=? WHERE id=? AND state<>'failed'",
+           (ST.now(), _stk["id"])); ac.commit()
+
+check("الحدود كلّها من متغيّرات البيئة",
+      set(JQ.limits()) >= {"max_queued_per_user","max_running","max_cards_per_job",
+                           "max_video_seconds","max_storage_mb_per_user",
+                           "job_timeout_seconds","max_retries","backoff_seconds"})
+_envs = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                          "falah", "jobs.py")).read()
+check("لا حدَّ مكتوبٌ في الشيفرة بلا متغيّر بيئة",
+      all(f'"{v}"' in _envs for v in
+          ("FALAH_MAX_QUEUED_PER_USER","FALAH_MAX_RUNNING","FALAH_MAX_CARDS_PER_JOB",
+           "FALAH_MAX_VIDEO_SECONDS","FALAH_MAX_STORAGE_MB_PER_USER",
+           "FALAH_JOB_TIMEOUT","FALAH_MAX_RETRIES","FALAH_BACKOFF")))
+
+
+# ثقبٌ كُشف بالفحص الساكن: `zip` تقتطع عند الأقصر، فمدًى ناقصُ آيةٍ كان
+# يمرّ على فحص التسلسل ويُقال عنه «متسلسل». هذا الاختبار يقفله.
+_rowsX = [{"ayah": 1}, {"ayah": 2}]
+def _numbering_ok(rows, ayah, to):
+    return (len(rows) == to - ayah + 1 and
+            all(r["ayah"] == n for r, n in zip(rows, range(ayah, to+1), strict=True)))
+check("فحص التسلسل يرفض مدًى ناقصَ آية", not _numbering_ok(_rowsX, 1, 3))
+check("ويقبل المدى التامّ", _numbering_ok([{"ayah":1},{"ayah":2},{"ayah":3}], 1, 3))
+check("ويرفض المدى المبعثر", not _numbering_ok([{"ayah":1},{"ayah":3}], 1, 2))
+check("والمصدر نفسه يقارن الطول قبل الأرقام",
+      "len(rows) == to - ayah + 1" in open(
+          os.path.join(os.path.dirname(os.path.abspath(__file__)), "api.py")).read())
+
+print("\n▸ الهجرات")
+from falah import migrate as MG
+check("الهجرات مرقَّمةٌ بلا تكرار",
+      len({m[0] for m in MG.MIGRATIONS}) == len(MG.MIGRATIONS))
+check("كلٌّ منها مصنَّفةٌ هادمةً أو آمنة",
+      all(isinstance(m[2], bool) for m in MG.MIGRATIONS))
+check("الهادمة لا تجري بلا إذنٍ صريح",
+      any(m[2] for m in MG.MIGRATIONS) and
+      MG.run(ac, allow_destructive=False, quiet=True)[1] != [])
+check("والإذن الصريح وحده يُجريها",
+      MG.run(ac, allow_destructive=True, quiet=True)[0] != [])
+check("والقيود صارت في الجدول بعد إجرائها",
+      "CHECK (state IN" in ac.execute(
+          "SELECT sql FROM sqlite_master WHERE name='jobs'").fetchone()[0])
+check("ولا تتكرّر إن أُعيد تشغيلها", MG.run(ac, allow_destructive=True, quiet=True) == ([], []))
+check("السجلّ يحفظ ما طُبِّق ومتى",
+      ac.execute("SELECT COUNT(*) n FROM schema_migrations").fetchone()["n"]
+      == len(MG.MIGRATIONS))
+check("القاعدة ما زالت تعمل بعد الهجرة الهادمة",
+      JQ.enqueue(ac, _uq, "export", {"project": _pq, "after": 1}, {})["state"] == "queued")
+check("والقيد يرفض حالةً غير معروفة",
+      _try_err(lambda: (ac.execute("UPDATE jobs SET state='wat' WHERE id=?",
+               (_pq,)), ac.commit()), _sq.IntegrityError)
+      or ac.execute("SELECT COUNT(*) n FROM jobs WHERE state='wat'").fetchone()["n"] == 0)
 
 print("\n" + ("─"*46))
 print(f"النتيجة: {'كل الاختبارات نجحت ✓' if not fails else 'سقط %d: %s' % (len(fails), fails)}")

@@ -11,10 +11,19 @@ services:
       FALAH_INVITE: "${FALAH_INVITE:-}"       # إطلاقٌ مغلق: لا حساب إلا برمزٍ تعطيه
       FALAH_INLINE_WORKER: "0"                # التصيير في خدمةٍ مستقلّة، لا هنا
       PORT: "8080"
+    # حدود الطابور والموارد تُقرأ هنا وفي العامل من الملفّ نفسه، وإلا اختلف
+    # ما يفرضه الخادمُ عند الاستقبال عمّا يفرضه العاملُ عند التنفيذ.
+    env_file: [.env]
     volumes:
       - falah-data:/data                      # app.db — يبقى بعد التحديث
       - falah-exports:/app/exports            # ثمرة التصيير — يكتبها العامل ويقرؤها الخادم
     expose: ["8080"]
+    healthcheck:                              # حياةٌ لا جاهزية — انظر Dockerfile
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
 
   # عامل التصيير: بطاقةٌ ≈ ٣ث ومقطعٌ ≈ ٢٦ث. فُصل عن الخادم كي لا يزاحم
   # استقبالَ الطلبات، ولأنه وحده يحتاج كروميوم وffmpeg وذاكرةً أوسع. يُزاد
@@ -27,9 +36,18 @@ services:
     environment:
       FALAH_APP_DB: /data/app.db              # الطابور نفسه — قاعدةٌ واحدة مشتركة
       FALAH_WORKERS: "${FALAH_WORKERS:-1}"
+    env_file: [.env]                          # الحدود نفسها التي يفرضها الخادم
     volumes:
       - falah-data:/data
       - falah-exports:/app/exports
+    # العامل بلا فحصٍ يبقى «يعمل» وهو معلَّق، والطابور يتراكم صامتًا.
+    # النبضة تُكتب داخل حلقته، فتوقّفُها يعني توقّفَ العمل لا العملية.
+    healthcheck:
+      test: ["CMD", "python3", "worker.py", "--healthcheck"]
+      interval: 30s
+      timeout: 10s
+      start_period: 20s
+      retries: 3
 
   proxy:
     image: caddy:2-alpine

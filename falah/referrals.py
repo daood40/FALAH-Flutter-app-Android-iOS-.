@@ -8,7 +8,7 @@
 يتجاوز المحيلُ سقفًا شهريًّا — فمن تجاوزه فأمرُه إلى مراجعةٍ بشرية لا إلى
 منعٍ صامت.
 """
-import hashlib, os, secrets, sys
+import os, secrets, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from falah import store, billing
 

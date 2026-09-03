@@ -9,10 +9,10 @@ import json, sqlite3, os, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from falah.text import fingerprint, searchable, core_key, clean
 from falah.matn import extract_matn, extract_narrator, is_card_ready
-from falah.reconcile import strip_leading_basmala, compare, releasable as text_released, DISAGREE
+from falah.reconcile import strip_leading_basmala, compare, releasable as text_released
 from falah import grades as G
 from falah.jami import Jami
-from falah.audio import RECITERS, audio_url
+from falah.audio import RECITERS
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RAW, DB = os.path.join(HERE, "raw"), os.path.join(HERE, "falah.db")

@@ -6,7 +6,7 @@
 الصوت يُجلب من رابط القارئ المسجَّل في القاعدة، والصورة من محرّك التصيير
 نفسه، فما يظهر في الفيديو هو نفس ما اجتاز الفحوص الخمسة والعشرين.
 """
-import argparse, os, subprocess, sys, tempfile, urllib.request, sqlite3, glob
+import argparse, os, subprocess, sys, tempfile, urllib.request, sqlite3
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import render as R
 from falah.audio import audio_url

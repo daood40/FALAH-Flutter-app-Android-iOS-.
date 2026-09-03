@@ -9,7 +9,7 @@
 نفس القالب الذي يراه المستخدم في الواجهة، فما رآه هو ما يُصدَّر.
 الخطوط محلّية (أميري بترخيص OFL) فلا يتغيّر الرسم باختلاف الجهاز.
 """
-import argparse, base64, json, os, sqlite3, sys, tempfile
+import argparse, base64, os, sqlite3, sys, tempfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import api
 from falah import verify as V
