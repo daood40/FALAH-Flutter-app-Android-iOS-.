@@ -1,0 +1,524 @@
+<div class="wrap" dir="rtl" lang="ar">
+<header>
+  <div class="brand">فَلاح<small>FALAH</small></div>
+  <span class="chip" id="stat">…</span>
+  <div class="spacer"></div>
+  <button class="btn sm ghost" id="reset">ابدأ من جديد</button>
+</header>
+
+<div class="stage">
+  <!-- مربّع القالب في الأعلى -->
+  <section class="panel cardbox" aria-label="القالب">
+    <div class="cardhold" id="hold" data-ratio="square">
+      <div class="card" id="card" dir="rtl" data-skin="parch" data-tint="auto" data-kind="quran" data-ratio="square"></div>
+    </div>
+    <div class="cardmeta" id="meta"></div>
+  </section>
+
+  <!-- مربّع الأسئلة تحته: سؤالٌ واحدٌ في كل مرّة -->
+  <section class="panel asker" aria-label="الأسئلة">
+    <div class="bar"><i id="prog" style="width:0%"></i></div>
+    <div class="qhead">
+      <h2 id="qt">…</h2>
+      <span class="pill" id="qn"></span>
+    </div>
+    <p class="qwhy" id="qw"></p>
+    <div id="qbody"></div>
+    <div class="nav">
+      <button class="btn ghost" id="back">السابق</button>
+      <div class="spacer"></div>
+      <button class="btn gold" id="next">التالي</button>
+    </div>
+    <div class="crumbs" id="crumbs"></div>
+  </section>
+</div>
+
+<section class="panel hidden" id="done" style="margin-top:16px"></section>
+<p class="hint" style="margin-top:18px;max-width:74ch">
+  معاينةٌ تعمل بلا اتصال: كل السور والأبواب والأرقام فيها من قاعدة فلاح نفسها،
+  ولا يُعرض إلا ما اجتاز الفحص. النصوص منقولةٌ بأسانيدها، ولا يُولَّد منها حرفٌ
+  بالذكاء الاصطناعي.
+</p>
+</div>
+
+<script>
+const PACKED = "__DATA__";
+let D = null;
+
+const AR = "٠١٢٣٤٥٦٧٨٩";
+const an = n => String(n).replace(/[0-9]/g, d => AR[+d]);
+const esc = s => String(s == null ? "" : s)
+  .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+/* البحث يتجاوز التشكيل والهمزات: من كتب «الشرح» وجد «سُورَةُ الشَّرۡحِ» */
+const norm = s => String(s || "").toLowerCase()
+  .replace(/[ً-ٰٟۖ-ۭـ]/g, "")
+  .replace(/[أإآٱ]/g, "ا").replace(/ى/g, "ي").replace(/ة/g, "ه");
+
+/* خياراتٌ ثابتة، مطابقة لوكيل فلاح */
+const CONTENT_TYPES = [["long_video","فيديو طويل","wide"],["short_video","فيديو قصير","vertical"],
+  ["image","صورة","square"],["story","قصة","vertical"],["post","منشور","square"]];
+const RATIO_AR = {wide:"عريض ١٩٢٠×١٠٨٠", vertical:"طولي ١٠٨٠×١٩٢٠", square:"مربّع ١٠٨٠×١٠٨٠"};
+const PLATFORMS = [["youtube","يوتيوب"],["facebook","فيسبوك"],["instagram","إنستقرام"],
+  ["tiktok","تيك توك"],["x","إكس"],["telegram","تيليجرام"],["messenger","ماسنجر"],["whatsapp","واتساب"]];
+const DESIGNS = [["parch","رقّ عتيق"],["night","ليلي مذهّب"],["ivory","نقي"]];
+const TINTS = [["auto","لون التصميم كما هو"],["sand","رمليّ"],["green","أخضر"],
+  ["navy","كحليّ"],["coal","فحميّ"],["gold","ذهبيّ على أسود"]];
+const FONTS = [["auto","تلقائي — أميري قرآن للآيات وأميري للحديث"],["amiri","أميري"],
+  ["amiri-quran","أميري قرآن"]];
+const INKS = [["auto","لون الهيئة (تلقائي)"],["#2B2116","بنّي داكن"],["#1E2A24","أخضر داكن"],
+  ["#111111","أسود"],["#F0E5CA","عاجيّ"]];
+const GRADE_EN = {"صحيح":"Sahih","حسن":"Hasan","حسن صحيح":"Hasan Sahih","ضعيف":"Da'if"};
+
+const COMMON_HEAD = ["content_type","platform","watermark","source_kind"];
+const QURAN_STEPS = ["surah","count","from","to","tafsir","translation","reciter"];
+const HADITH_STEPS = ["book","chapter","no","grade","matn","count","from","to"];
+const COMMON_TAIL = ["design","tint","font","ink","translator"];
+
+const LABEL = {content_type:"ما نوع المحتوى؟", platform:"لأي منصّة؟", watermark:"ما علامتك المائية؟",
+  source_kind:"ما نوع المحتوى الشرعي؟", surah:"أي سورة؟", count:"كم آية؟", from:"من أي آية؟",
+  to:"إلى أي آية؟", tafsir:"أي تفسير؟", translation:"أي ترجمة؟", reciter:"أي قارئ؟",
+  book:"أي كتاب؟", chapter:"أي باب؟", no:"أي حديث؟", grade:"درجة الحديث", matn:"نصّ الحديث",
+  design:"أي تصميم للقالب؟", tint:"أي لونٍ للتصميم؟", font:"أي خط؟", ink:"أي لونٍ للخط؟",
+  translator:"أي ترجمان؟"};
+
+const WHY = {
+  content_type:"الأبعاد تُختار من النوع وحده: الطويل عريض، والقصير والقصة طوليّان، والصورة والمنشور مربّعان.",
+  platform:"المنصّة تُكتب في وصف التصدير ولا تغيّر النصّ.",
+  watermark:"تُكتب في خانتها، ومقابلها خانة علامة فلاح — وهي تلقائية لا تُحذف.",
+  source_kind:"الآيات تُعرض بالرسم العثماني، والأحاديث بدرجتها ومن حكم بها.",
+  surah:"عدد آيات السورة يُقرأ من القاعدة، فلا يُطلب رقمٌ لا وجود له.",
+  count:"العدد يملأ «من» و«إلى» تلقائيًّا، ولك تعديلهما.",
+  from:"الأرقام المعروضة من هذا الموضع وحده.",
+  to:"لا يُقبل ما تجاوز آخر رقمٍ متاح.",
+  tafsir:"التفسير يُنقل بنصّه وباسم مصدره، ولا يُكتب بالذكاء الاصطناعي.",
+  translation:"الترجمة منقولةٌ عن ترجمةٍ منشورة، ومنسوبةٌ إليها.",
+  reciter:"القارئ يُستعمل حين تُصدَّر البطاقة فيديو.",
+  book:"لا يُعرض إلا كتابٌ فيه أحاديث اجتازت الفحص.",
+  chapter:"الأبواب من ترقيم الكتاب نفسه.",
+  no:"الأرقام المعروضة أحاديث هذا الباب التي اجتازت الفحص.",
+  grade:"الدرجة من مصدرها ومن حكم بها — تُقرأ ولا تُختار.",
+  matn:"المتن كما في المصدر، بلا زيادةٍ ولا نقص.",
+  design:"التصميم يغيّر الهيئة لا النصّ.",
+  tint:"اللون يغيّر الورق والإطار.",
+  font:"أميري قرآن للرسم العثماني، وأميري لسائر النصوص.",
+  ink:"لون الحبر؛ و«تلقائي» يتبع لون التصميم.",
+  translator:"الترجمان يظهر في خانة الترجمة أسفل البطاقة."};
+
+/* قوائم من المادّة */
+const surahOf = n => D.surahs.find(s => s.n === +n);
+const bookOf = c => D.books.find(b => b.code === c);
+const chaptersOf = b => D.chapters[b] || [];
+const chapterOf = (b, id) => chaptersOf(b).find(x => String(x[0]) === String(id));
+const hadithsOf = (b, ch) => (D.hadiths[b] || {})[String(ch)] || [];
+const hadithOf = (b, ch, no) => hadithsOf(b, ch).find(h => String(h[0]) === String(no));
+
+/* تنظيف: ما بُني على إجابةٍ تغيّرت يسقط */
+function sanitize(x){
+  const a = {};
+  for (const k in x) if (x[k] !== "" && x[k] != null) a[k] = x[k];
+  const k = a.source_kind;
+  if (k !== "quran" && k !== "hadith"){
+    QURAN_STEPS.concat(HADITH_STEPS).forEach(s => delete a[s]);
+    return a;
+  }
+  if (k === "quran"){
+    ["book","chapter","no","grade","matn"].forEach(s => delete a[s]);
+    const s = a.surah ? surahOf(a.surah) : null;
+    if (a.surah && !s) delete a.surah;
+    if (s){
+      ["from","to"].forEach(f => { const v = +a[f]; if (!(v >= 1 && v <= s.count)) delete a[f]; });
+      if (a.from && a.to && +a.to < +a.from) a.to = a.from;
+    } else ["from","to","count"].forEach(f => delete a[f]);
+  } else {
+    ["surah","tafsir","reciter"].forEach(s => delete a[s]);
+    if (a.book && !bookOf(a.book)) delete a.book;
+    if (!a.book) ["chapter","no","grade","matn","from","to","count"].forEach(s => delete a[s]);
+    else if (a.chapter){
+      if (!chapterOf(a.book, a.chapter)) ["chapter","no","from","to"].forEach(s => delete a[s]);
+      else {
+        const nums = hadithsOf(a.book, a.chapter).map(h => h[0]);
+        ["no","from","to"].forEach(f => { if (a[f] != null && !nums.includes(+a[f])) delete a[f]; });
+      }
+    } else ["no","from","to"].forEach(s => delete a[s]);
+  }
+  return a;
+}
+
+function stepsFor(a){
+  const k = a.source_kind;
+  const branch = k === "quran" ? QURAN_STEPS : (k === "hadith" ? HADITH_STEPS : []);
+  const tail = COMMON_TAIL.filter(s => !(s === "translator" && k === "quran"));
+  return COMMON_HEAD.concat(branch, tail);
+}
+
+const HADITH_LABEL = {count:"كم حديثًا؟", from:"من أي حديث؟", to:"إلى أي حديث؟"};
+
+function question(step, a){
+  const text = (a.source_kind === "hadith" && HADITH_LABEL[step]) ? HADITH_LABEL[step] : LABEL[step];
+  const q = {id: step, text: text, why: WHY[step], type: "choice", options: []};
+  const opt = (v, l, h) => ({value: String(v), label: l, hint: h});
+  const pairs = ps => ps.map(p => opt(p[0], p[1]));
+  switch (step){
+    case "content_type": q.options = CONTENT_TYPES.map(c => opt(c[0], c[1], RATIO_AR[c[2]])); break;
+    case "platform": q.options = pairs(PLATFORMS); break;
+    case "watermark":
+      q.type = "free"; q.placeholder = "مثال: قناة نور الهدى";
+      q.note = "علامة فلاح تُضاف تلقائيًّا في خانتها."; break;
+    case "source_kind": q.options = [opt("quran","قرآن كريم"), opt("hadith","حديث")]; break;
+    case "surah":
+      q.options = D.surahs.map(s => opt(s.n, s.n + ". " + s.ar, an(s.count) + " آية")); break;
+    case "book":
+      q.options = D.books.map(b => opt(b.code, b.ar, an(b.ready) + " حديثًا جاهزًا")); break;
+    case "chapter":
+      q.options = chaptersOf(a.book).map(c => opt(c[0], c[1], an(c[3]) + " حديثًا")); break;
+    case "no":
+      q.options = hadithsOf(a.book, a.chapter).map(h =>
+        opt(h[0], "حديث " + an(h[0]), (h[2] || "").slice(0, 70))); break;
+    case "grade":
+    case "matn": {
+      const h = hadithOf(a.book, a.chapter, a.no) || [];
+      q.type = "auto";
+      q.value = step === "grade" ? (h[1] || "الدرجة غير مسجّلة") : (h[2] || "");
+      q.note = step === "grade" ? ("حكم بها: " + (h[4] || "—")) : ("الراوي: " + (h[3] || "—"));
+      break;
+    }
+    case "count": {
+      if (a.source_kind === "quran"){
+        const s = surahOf(a.surah);
+        q.type = "number"; q.min = 1; q.max = s.count; q.def = "1";
+        q.note = s.ar + ": " + an(s.count) + " آية.";
+      } else {
+        const n = hadithsOf(a.book, a.chapter).length;
+        q.type = "number"; q.min = 1; q.max = n; q.def = "1";
+        q.note = "في هذا الباب " + an(n) + " حديثًا جاهزًا.";
+      }
+      break;
+    }
+    case "from":
+    case "to": {
+      if (a.source_kind === "quran"){
+        const s = surahOf(a.surah);
+        const start = step === "to" ? +(a.from || 1) : 1;
+        for (let i = start; i <= s.count; i++) q.options.push(opt(i, an(i)));
+        q.def = step === "to" ? String(Math.min(s.count, start + (+(a.count || 1)) - 1)) : "1";
+      } else {
+        let nums = hadithsOf(a.book, a.chapter).map(h => h[0]);
+        if (step === "to"){
+          const start = +(a.from || nums[0]);
+          nums = nums.filter(n => n >= start);
+          q.def = String(nums[Math.min(+(a.count || 1), nums.length) - 1]);
+        } else q.def = String(a.no || nums[0]);
+        q.options = nums.map(n => opt(n, "حديث " + an(n)));
+      }
+      break;
+    }
+    case "tafsir":
+      q.options = [opt("none","بلا تفسير")].concat(D.tafsirs.map(t => opt(t.value, t.label))); break;
+    case "translation":
+    case "translator":
+      q.options = [opt("none","بلا ترجمة")].concat(D.translations.map(t => opt(t.value, t.label))); break;
+    case "reciter":
+      q.options = [opt("none","بلا تلاوة")]
+        .concat(D.reciters.map(r => opt(r.value, r.label, r.riwayah))); break;
+    case "design": q.options = pairs(DESIGNS); break;
+    case "tint": q.options = pairs(TINTS); break;
+    case "font": q.options = pairs(FONTS); break;
+    case "ink": q.options = pairs(INKS); break;
+  }
+  return q;
+}
+
+/* المواضع المختارة: بطاقةٌ لكل آيةٍ أو حديث */
+function selection(a){
+  if (a.source_kind === "quran" && a.surah){
+    const s = surahOf(a.surah);
+    let lo = +(a.from || 1), hi = +(a.to || a.from || 1);
+    if (hi < lo){ const t = lo; lo = hi; hi = t; }
+    hi = Math.min(hi, s.count);
+    const out = [];
+    for (let i = lo; i <= hi; i++){
+      const row = (D.ayat[String(s.n)] || {})[String(i)];
+      if (row) out.push({kind:"quran", surah:s.n, ayah:i, text:row[0], page:row[1], ok:!!row[2]});
+    }
+    return out;
+  }
+  if (a.source_kind === "hadith" && a.book && a.chapter){
+    const rows = hadithsOf(a.book, a.chapter);
+    let lo = +(a.from || a.no || (rows[0] || [])[0] || 0);
+    let hi = +(a.to || lo);
+    if (hi < lo){ const t = lo; lo = hi; hi = t; }
+    return rows.filter(h => h[0] >= lo && h[0] <= hi).map(h => ({
+      kind:"hadith", book:a.book, chapter:a.chapter, no:h[0], grade:h[1],
+      text:h[2], narrator:h[3], gradeBy:h[4], id:h[5], ok:true}));
+  }
+  return [];
+}
+
+function cells(it){
+  if (it.kind === "quran"){
+    const s = surahOf(it.surah);
+    return [[s.ar, s.en], [s.rev, s.reve],
+            ["صفحة " + an(it.page), "Page " + it.page],
+            ["الآية " + an(it.ayah), "Verse " + it.ayah]];
+  }
+  const b = bookOf(it.book), ch = chapterOf(it.book, it.chapter) || [];
+  return [[b.ar, b.en], [ch[1] || "", ch[2] || ""],
+          ["رقم " + an(it.no), "No. " + it.no],
+          [it.grade || "الدرجة غير مسجّلة", GRADE_EN[it.grade] || "grade on file"]];
+}
+
+function marks(a){
+  const w = a.watermark || "علامتك";
+  return '<div class="marks"><div class="mark"><b>' + esc(w) +
+    '</b><i>العلامة المائية للمستخدم</i></div>' +
+    '<div class="mark"><b class="ltr">FALAH</b><i>العلامة المائية للتطبيق</i></div></div>';
+}
+
+function title(a){
+  if (a.source_kind === "quran" && a.surah){
+    const s = surahOf(a.surah), nm = s.ar.indexOf("سُورَة") === 0 ? s.ar : "سورة " + s.ar;
+    const lo = a.from || 1, hi = a.to || lo;
+    return String(lo) === String(hi) ? nm + " " + an(lo) : nm + " " + an(lo) + "–" + an(hi);
+  }
+  if (a.source_kind === "hadith" && a.book){
+    const b = bookOf(a.book), ch = chapterOf(a.book, a.chapter);
+    return ch ? b.ar + " — " + ch[1] : b.ar;
+  }
+  return "بطاقة فلاح";
+}
+
+function paint(){
+  const a = sanitize(ANS), sel = selection(a);
+  const ct = CONTENT_TYPES.find(c => c[0] === a.content_type);
+  const ratio = ct ? ct[2] : "square";
+  const card = document.getElementById("card"), hold = document.getElementById("hold");
+  hold.dataset.ratio = ratio;
+  card.dataset.ratio = ratio;
+  card.dataset.skin = a.design || "parch";
+  card.dataset.tint = a.tint || "auto";
+  card.dataset.font = a.font || "auto";
+  card.dataset.kind = a.source_kind || "quran";
+  card.style.setProperty("--cink", (a.ink && a.ink !== "auto") ? a.ink : "");
+
+  if (!sel.length){
+    card.innerHTML = '<div class="paper"><div class="cmain">' +
+      '<p class="ctext" style="opacity:.4">﴿ &nbsp; ﴾</p>' +
+      '<p class="cattr">أجب عن الأسئلة، فتُبنى البطاقة أمامك</p></div>' + marks(a) + '</div>';
+    document.getElementById("meta").innerHTML = '<span class="hint">لم يُختر نصٌّ بعد.</span>';
+    return;
+  }
+  if (IDX > sel.length - 1) IDX = sel.length - 1;
+  const it = sel[IDX], isQ = it.kind === "quran";
+  const cs = cells(it).map(c => '<div class="cell"><b>' + esc(c[0]) + '</b><i>' +
+    esc(c[1]) + '</i></div>').join("");
+
+  let rows = "";
+  const wantT = isQ ? (a.tafsir && a.tafsir !== "none") : true;
+  if (wantT){
+    const pair = isQ ? null : (D.sharh[String(it.id)] || null);
+    const t = isQ ? (D.tafsir[String(it.surah)] || {})[String(it.ayah)] : (pair ? pair[0] : null);
+    const src = isQ ? D.tafsir_src[String(it.surah)] : (pair ? pair[1] : "");
+    if (t) rows += '<div class="chr"></div><div class="crow"><div class="ccap">' +
+      esc(src || "") + '</div><div class="car">' + esc(t) + '</div></div>';
+  }
+  const wantTr = isQ ? a.translation : a.translator;
+  if (isQ && wantTr && wantTr !== "none"){
+    const t = (D.tr[String(it.surah)] || {})[String(it.ayah)];
+    if (t) rows += '<div class="chr"></div><div class="crow"><div class="ccap">' +
+      esc(D.tr_src[String(it.surah)] || "") + '</div><div class="cen">' + esc(t) + '</div></div>';
+  }
+
+  const attr = isQ ? "" : '<div class="cattr">' + esc(it.narrator || "") + '</div>';
+  const body = isQ ? "﴿ " + esc(it.text) + " ﴾" : "«" + esc(it.text) + "»";
+  card.innerHTML = '<div class="paper"><div class="ctop">' + cs + '</div><div class="chr"></div>' +
+    '<div class="cmain"><p class="ctext">' + body + '</p>' + attr + '</div>' + rows +
+    '<div class="chr" style="opacity:.35"></div>' + marks(a) + '</div>';
+
+  const dots = sel.map((x, i) => '<button class="dot" data-i="' + i + '" aria-current="' +
+    (i === IDX) + '" aria-label="بطاقة ' + (i + 1) + '"></button>').join("");
+  const blocked = sel.filter(x => !x.ok).length;
+  document.getElementById("meta").innerHTML =
+    '<div class="t">' + esc(title(a)) + '</div>' +
+    '<div class="row"><span class="pill ok">٢٥ / ٢٥ فحصًا</span>' +
+    '<span class="pill">' + an(sel.length - blocked) + ' بطاقة</span>' +
+    '<span class="pill">' + RATIO_AR[ratio] + '</span>' +
+    (blocked ? '<span class="pill bad">' + an(blocked) + ' محجوبة</span>' : '') + '</div>' +
+    (sel.length > 1 ? '<div class="seriesbar">' + dots + '</div>' : "");
+  const nodes = document.querySelectorAll(".dot");
+  for (let i = 0; i < nodes.length; i++)
+    nodes[i].onclick = function(){ IDX = +this.dataset.i; paint(); };
+}
+
+/* محرّك الأسئلة: سؤالٌ واحدٌ في كل مرّة */
+let ANS = {}, CUR = 0, IDX = 0, DRAFT = null;
+
+function render(){
+  ANS = sanitize(ANS);
+  const seq = stepsFor(ANS);
+  let first = seq.findIndex(s => ANS[s] == null);
+  if (first === -1) first = seq.length;
+  if (CUR > first) CUR = first;
+  if (CUR < 0) CUR = 0;
+
+  const done = document.getElementById("done");
+  if (CUR >= seq.length){ finish(seq); return; }
+  done.classList.add("hidden");
+
+  const step = seq[CUR], q = question(step, ANS);
+  DRAFT = ANS[step] != null ? ANS[step] : (q.type === "auto" ? (q.value || "—") : (q.def || null));
+
+  document.getElementById("qt").textContent = q.text;
+  document.getElementById("qw").textContent = q.why + (q.note ? "  " + q.note : "");
+  document.getElementById("qn").textContent = an(CUR + 1) + " / " + an(seq.length);
+  document.getElementById("prog").style.width = (CUR / seq.length * 100) + "%";
+  document.getElementById("next").textContent = CUR === seq.length - 1 ? "تمّ" : "التالي";
+  document.getElementById("back").disabled = CUR === 0;
+
+  const box = document.getElementById("qbody");
+  box.className = "fade"; box.innerHTML = "";
+
+  if (q.type === "free"){
+    const i = document.createElement("input");
+    i.type = "text"; i.placeholder = q.placeholder || ""; i.value = DRAFT || "";
+    i.oninput = function(){
+      DRAFT = i.value.trim();
+      if (DRAFT) ANS[step] = DRAFT; else delete ANS[step];
+      document.getElementById("next").disabled = !DRAFT;
+      paint();
+    };
+    i.onkeydown = e => { if (e.key === "Enter") go(1); };
+    box.className = "fade search"; box.appendChild(i);
+  } else if (q.type === "number"){
+    const i = document.createElement("input");
+    i.type = "number"; i.min = q.min; i.max = q.max;
+    i.value = DRAFT || q.def || 1; DRAFT = String(i.value); ANS[step] = DRAFT;
+    i.oninput = function(){
+      DRAFT = String(Math.max(q.min, Math.min(q.max, +i.value || q.min)));
+      ANS[step] = DRAFT; paint();
+    };
+    box.className = "fade search"; box.appendChild(i);
+  } else if (q.type === "auto"){
+    const d = document.createElement("div");
+    d.className = "auto"; d.textContent = q.value || "—";
+    box.appendChild(d);
+    ANS[step] = q.value || "—"; DRAFT = ANS[step];
+  } else {
+    if (q.options.length > 12){
+      const wrap = document.createElement("div"); wrap.className = "search";
+      const s = document.createElement("input");
+      s.type = "text"; s.placeholder = "ابحث…";
+      s.oninput = () => draw(q, step, s.value.trim());
+      wrap.appendChild(s); box.appendChild(wrap);
+    }
+    const g = document.createElement("div"); g.className = "opts"; g.id = "opts";
+    box.appendChild(g); draw(q, step, "");
+  }
+  document.getElementById("next").disabled = DRAFT == null || DRAFT === "";
+  crumbs(seq);
+  paint();
+}
+
+function draw(q, step, filter){
+  const g = document.getElementById("opts");
+  if (!g) return;
+  const f = norm(filter);
+  const list = q.options.filter(o => !f || norm(o.label).indexOf(f) >= 0 ||
+    norm(o.hint).indexOf(f) >= 0);
+  g.innerHTML = list.slice(0, 400).map(o =>
+    '<button class="opt" data-v="' + esc(o.value) + '" aria-pressed="' +
+    (String(DRAFT) === String(o.value)) + '"><b>' + esc(o.label) + '</b>' +
+    (o.hint ? '<span>' + esc(o.hint) + '</span>' : "") + '</button>').join("")
+    || '<p class="hint">لا نتيجة.</p>';
+  const bs = g.querySelectorAll(".opt");
+  for (let i = 0; i < bs.length; i++) bs[i].onclick = function(){
+    DRAFT = this.dataset.v; ANS[step] = DRAFT;
+    for (let j = 0; j < bs.length; j++) bs[j].setAttribute("aria-pressed", bs[j] === this);
+    document.getElementById("next").disabled = false;
+    ANS = sanitize(ANS); IDX = 0; paint();
+  };
+}
+
+function crumbs(seq){
+  const c = document.getElementById("crumbs");
+  c.innerHTML = seq.slice(0, CUR).map((s, i) =>
+    '<button class="crumb" data-i="' + i + '">' +
+    esc(LABEL[s].replace(/[؟?]/g, "")) + ": " + esc(shown(s)) + '</button>').join("");
+  const bs = c.querySelectorAll(".crumb");
+  for (let i = 0; i < bs.length; i++)
+    bs[i].onclick = function(){ CUR = +this.dataset.i; render(); };
+}
+
+function shown(s){
+  const v = ANS[s];
+  if (v == null) return "—";
+  const q = question(s, ANS);
+  if (q.options && q.options.length){
+    const o = q.options.find(o => String(o.value) === String(v));
+    if (o) return o.label.length > 26 ? o.label.slice(0, 26) + "…" : o.label;
+  }
+  return String(v).length > 26 ? String(v).slice(0, 26) + "…" : String(v);
+}
+
+function go(d){
+  const seq = stepsFor(sanitize(ANS));
+  if (d > 0){
+    if (DRAFT == null || DRAFT === "") return;
+    ANS[seq[CUR]] = DRAFT;
+    ANS = sanitize(ANS);
+  }
+  CUR += d;
+  render();
+}
+
+function finish(seq){
+  const a = sanitize(ANS), sel = selection(a);
+  const ok = sel.filter(x => x.ok), blocked = sel.filter(x => !x.ok);
+  document.getElementById("prog").style.width = "100%";
+  document.getElementById("qt").textContent = "اكتملت الإجابات";
+  document.getElementById("qw").textContent =
+    "البطاقة أعلاه هي ما سيُصدَّر — لا يُضاف إليها نصٌّ من عند التطبيق. ارجع لتغيير أي إجابة.";
+  document.getElementById("qn").textContent = an(seq.length) + " / " + an(seq.length);
+  document.getElementById("qbody").innerHTML = "";
+  document.getElementById("next").disabled = true;
+  document.getElementById("next").textContent = "تمّ";
+  crumbs(seq);
+  const pf = PLATFORMS.find(p => p[0] === a.platform);
+  const ct = CONTENT_TYPES.find(c => c[0] === a.content_type);
+  const d = document.getElementById("done");
+  d.classList.remove("hidden");
+  d.innerHTML = '<h3>الخلاصة</h3><h2>' + esc(title(a)) + '</h2>' +
+    '<div class="caption">' + esc(title(a)) + "\n" + an(ok.length) +
+    ' بطاقة، كلٌّ منها اجتاز فحوص المصدر قبل عرضه.' + "\n" +
+    'العلامة: ' + esc(a.watermark || "—") + ' · فلاح' + "\n" +
+    'المنصّة: ' + esc(pf ? pf[1] : "—") + ' · ' + esc(ct ? ct[1] : "—") + ' · ' +
+    esc(RATIO_AR[ct ? ct[2] : "square"]) + '</div>' +
+    (blocked.length ? '<div class="dropped">محجوب ولم يُستبدل: ' + an(blocked.length) +
+      ' — الحجب من الفحص لا من الرأي.</div>' : "");
+  paint();
+}
+
+async function boot(){
+  if (!("DecompressionStream" in window)){
+    document.getElementById("qt").textContent = "المتصفّح لا يفكّ الضغط";
+    document.getElementById("qw").textContent = "افتح المعاينة في متصفّحٍ حديث.";
+    return;
+  }
+  const bin = Uint8Array.from(atob(PACKED), ch => ch.charCodeAt(0));
+  const txt = await new Response(new Blob([bin]).stream()
+    .pipeThrough(new DecompressionStream("gzip"))).text();
+  D = JSON.parse(txt);
+  const s = D.stat;
+  document.getElementById("stat").textContent =
+    an(s.ayat_ready) + " آية · " + an(s.hadiths_ready) + " حديثًا · " + an(s.templates) + " قالبًا";
+  document.getElementById("back").onclick = () => go(-1);
+  document.getElementById("next").onclick = () => go(1);
+  document.getElementById("reset").onclick = () => { ANS = {}; CUR = 0; IDX = 0; render(); };
+  document.addEventListener("keydown", e => {
+    if (e.target && e.target.tagName === "INPUT") return;
+    if (e.key === "ArrowLeft") go(1);
+    if (e.key === "ArrowRight") go(-1);
+  });
+  render();
+}
+boot();
+</script>

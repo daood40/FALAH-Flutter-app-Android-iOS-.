@@ -1,0 +1,1079 @@
+<!doctype html>
+<html dir="rtl" lang="ar"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0C1613">
+<meta name="color-scheme" content="dark">
+<meta name="description" content="بطاقاتٌ ومقاطعُ من القرآن والحديث بسندها ودرجتها ومصدرها.">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icons/icon-192.png">
+<link rel="apple-touch-icon" href="/icons/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="فَلاح">
+<title>فلاح — مساحة العمل</title>
+<style>
+@font-face{font-family:'Amiri';src:url(/fonts/Amiri-Regular.ttf) format('truetype');font-weight:400;font-display:swap}
+@font-face{font-family:'Amiri';src:url(/fonts/Amiri-Bold.ttf) format('truetype');font-weight:700;font-display:swap}
+@font-face{font-family:'Plex';src:url(/fonts/plex1.woff2) format('woff2');font-weight:400;font-display:swap}
+@font-face{font-family:'Plex';src:url(/fonts/plex2.woff2) format('woff2');font-weight:500;font-display:swap}
+@font-face{font-family:'Plex';src:url(/fonts/plex3.woff2) format('woff2');font-weight:600;font-display:swap}
+:root{
+  --bg:#080F0D; --panel:#0D1815; --panel2:#101F1A; --line:rgba(201,162,71,.18);
+  --line2:rgba(201,162,71,.35); --ink:#F0E5CA; --sub:#A08F63; --gold:#C9A247;
+  --ok:#6FB58A; --warn:#D9A441; --bad:#C86B5E;
+  --r:10px; --r-lg:14px; --r-sm:7px;
+  --scripture:'Amiri','Times New Roman',serif;
+  --ui:'Plex','Amiri',system-ui,sans-serif;
+  --lift:0 18px 40px -26px rgba(3,10,8,.9), 0 1px 0 rgba(201,162,71,.05) inset;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--ui);min-height:100dvh;
+  background-image:radial-gradient(120% 80% at 50% 0%,#12241D 0%,#080F0D 60%);
+  -webkit-font-smoothing:antialiased}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.035;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/></filter><rect width='120' height='120' filter='url(%23n)'/></svg>")}
+.wrap{position:relative;z-index:1}
+@media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
+button,input,select,textarea{font:inherit;color:inherit}
+a{color:var(--gold)}
+.wrap{max-width:1180px;margin:0 auto;padding:18px}
+header{display:flex;align-items:center;gap:14px;padding:14px 0 18px;border-bottom:1px solid var(--line)}
+.brand{font-family:var(--scripture);font-weight:700;font-size:26px;letter-spacing:-.01em;
+  line-height:1.1}
+.brand small{display:block;font-size:12px;color:var(--sub);letter-spacing:.22em;direction:ltr}
+.spacer{flex:1}
+.btn{background:#132720;border:1px solid var(--line2);
+  color:var(--ink);border-radius:var(--r-sm);padding:9px 16px;cursor:pointer;font-weight:500;
+  transition:background .2s ease,border-color .2s ease,transform .12s ease}
+.btn:hover{background:#1B3529;border-color:rgba(201,162,71,.5)}
+.btn:active{transform:translateY(1px) scale(.985)}
+.btn:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.btn.gold{background:var(--gold);color:#14100A;border-color:var(--gold);font-weight:700}
+.btn.gold:hover{filter:brightness(1.08)}
+.btn.ghost{background:transparent}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.sm{padding:5px 11px;font-size:14px;border-radius:8px}
+input,select,textarea{background:#0B1512;border:1px solid var(--line);border-radius:8px;
+  padding:10px 12px;width:100%;outline:none}
+input:focus,select:focus{border-color:var(--line2)}
+label{display:block;font-size:14px;color:var(--sub);margin:12px 0 5px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);
+  padding:18px;box-shadow:var(--lift)}
+.muted{color:var(--sub)}
+.err{color:var(--bad);margin-top:10px;min-height:20px;font-size:15px}
+.ok{color:var(--ok)}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.grid{display:grid;grid-template-columns:290px 1fr;gap:18px;margin-top:18px;align-items:start}
+@media(max-width:880px){.grid{grid-template-columns:1fr}}
+.plist{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+.pitem{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:11px 13px;cursor:pointer}
+.pitem:hover{border-color:var(--line2)}
+.pitem.on{border-color:var(--gold);background:#16281F}
+.pitem b{display:block;font-size:16px}
+.pitem span{font-size:13px;color:var(--sub)}
+.tabs{display:flex;gap:6px;margin-bottom:12px}
+.tab{padding:7px 14px;border-radius:8px;border:1px solid var(--line);cursor:pointer;background:transparent}
+.tab.on{background:#16281F;border-color:var(--gold);color:var(--ink)}
+.item{border:1px solid var(--line);border-radius:9px;padding:12px 14px;margin-bottom:9px;background:var(--panel2)}
+.item .txt{font-family:var(--scripture);line-height:2;font-size:20px;max-width:62ch}
+.item .meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;font-size:13px;color:var(--sub)}
+.pill{border:1px solid var(--line2);border-radius:var(--r-sm);padding:2px 9px;font-size:12.5px;
+  font-variant-numeric:tabular-nums;font-weight:500}
+.pill.ok{color:var(--ok);border-color:rgba(111,181,138,.5)}
+.pill.warn{color:var(--warn);border-color:rgba(217,164,65,.5)}
+.pill.bad{color:var(--bad);border-color:rgba(200,107,94,.5)}
+.res{border-bottom:1px solid var(--line);padding:11px 2px;display:flex;gap:12px;align-items:flex-start}
+.res p{flex:1;line-height:1.85}
+.res small{color:var(--sub)}
+h2{font-family:var(--scripture);font-size:24px;letter-spacing:-.015em;margin-bottom:4px;
+  text-wrap:balance}
+h3{font-size:17px;color:var(--sub);font-weight:400;margin:18px 0 8px}
+.split{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:760px){.split{grid-template-columns:1fr}}
+.hint{font-size:14px;color:var(--sub);line-height:1.8;max-width:70ch}
+.thumbs{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+.thumbs img{width:130px;border:1px solid var(--line2);border-radius:6px}
+pre.cap{white-space:pre-wrap;background:#0B1512;border:1px solid var(--line);
+  border-radius:var(--r);padding:13px;font-family:var(--scripture);line-height:1.95;
+  font-size:16px;margin-top:10px}
+.hidden{display:none!important}
+
+/* ــ مربّع القالب فوق مربّع الأسئلة ــ */
+.stage{display:flex;flex-direction:column;gap:14px;margin-top:12px}
+.cardbox{display:flex;flex-direction:column;gap:10px}
+.cardmeta{display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--sub)}
+.cardmeta .t{font-size:17px;color:var(--ink);font-weight:700}
+.seriesbar{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.dot{width:9px;height:9px;border-radius:99px;border:1px solid var(--line2);background:transparent;
+  padding:0;cursor:pointer}
+.dot[aria-current="true"]{background:var(--gold);border-color:var(--gold)}
+.bar{height:3px;background:rgba(201,162,71,.14);border-radius:99px;overflow:hidden;margin-bottom:12px}
+.bar i{display:block;height:100%;background:var(--gold);transition:width .3s ease}
+.opts{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin-top:12px;
+  max-height:min(44vh,360px);overflow-y:auto;padding:2px}
+.opt{background:var(--panel2,#101E19);border:1px solid var(--line);border-radius:var(--r-md);
+  padding:10px 12px;cursor:pointer;text-align:start}
+.opt:hover{border-color:var(--line2)}
+.opt[aria-pressed="true"]{border-color:var(--gold);background:#16281F}
+.opt b{display:block;font-size:15px;font-weight:600}
+.opt span{display:block;font-size:12.5px;color:var(--sub);overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.nav{display:flex;gap:10px;align-items:center;margin-top:14px;padding-top:12px;
+  border-top:1px solid var(--line)}
+.nav .sp{flex:1}
+.crumbs{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.crumb{border:1px solid var(--line);border-radius:99px;padding:2px 10px;font-size:12px;
+  color:var(--sub);cursor:pointer;background:transparent}
+.auto{margin-top:12px;border:1px solid var(--line);border-inline-start:3px solid var(--gold);
+  border-radius:var(--r-md);padding:12px 14px;font-size:17px;line-height:1.9}
+/* ــ البطاقة: نفس بناء محرّك التصيير، بمقاييس نسبية إلى عرض البطاقة ــ */
+.cardhold{container-type:inline-size;width:100%;max-width:340px;margin-inline:auto;
+  transition:max-width .25s ease}
+.cardhold[data-ratio="vertical"]{max-width:236px}
+.cardhold[data-ratio="wide"]{max-width:100%}
+.tpl{font-family:var(--scripture);
+  --frame:#C9AE7E;
+  --page:radial-gradient(120% 95% at 32% 18%,#F5EAD0 0%,#EEDFBC 42%,#E3D0A6 76%,#D9C69C 100%);
+  --cink:#2B2116;--csub:#6E5836;--crule:rgba(94,73,42,.55);--chair:rgba(94,73,42,.30);
+  --cedge:rgba(94,73,42,.45);--cglow:rgba(120,92,48,.22);
+  width:100%;aspect-ratio:1/1;background:var(--frame);padding:1.67cqw;display:flex;border-radius:4px}
+.tpl[data-skin="night"]{--frame:#0A1512;
+  --page:radial-gradient(120% 85% at 50% 30%,#12241D 0%,#0A1512 55%,#050A08 100%);
+  --cink:#F0E5CA;--csub:#A08F63;--crule:rgba(201,162,71,.42);--chair:rgba(201,162,71,.22);
+  --cedge:rgba(201,162,71,.34);--cglow:rgba(201,162,71,.10)}
+.tpl[data-skin="ivory"]{--frame:#E8E3D7;
+  --page:linear-gradient(170deg,#FCFAF5,#F4F1E8);
+  --cink:#1E2A24;--csub:#6E7A72;--crule:rgba(47,93,74,.45);--chair:rgba(47,93,74,.15);
+  --cedge:rgba(47,93,74,.25);--cglow:rgba(47,93,74,.06)}
+/* ألوان التصميم — تُطابق TINTS في محرّك التصيير حرفًا بحرف */
+.tpl[data-tint="sand"]{--frame:#C9AE7E;
+  --page:radial-gradient(120% 95% at 32% 18%,#F5EAD0 0%,#EEDFBC 42%,#E3D0A6 76%,#D9C69C 100%);
+  --crule:rgba(94,73,42,.55);--chair:rgba(94,73,42,.30);--cedge:rgba(94,73,42,.45);
+  --cglow:rgba(120,92,48,.22)}
+.tpl[data-tint="green"]{--frame:#2F5D4A;
+  --page:radial-gradient(120% 95% at 32% 18%,#F2F7F3 0%,#E2EDE5 42%,#CEDFD4 76%,#BFD4C8 100%);
+  --crule:rgba(30,66,52,.55);--chair:rgba(30,66,52,.28);--cedge:rgba(30,66,52,.42);
+  --cglow:rgba(30,66,52,.14)}
+.tpl[data-tint="navy"]{--frame:#22344F;
+  --page:radial-gradient(120% 95% at 32% 18%,#F3F5F9 0%,#E4E9F1 42%,#D2DAE7 76%,#C4CEDE 100%);
+  --crule:rgba(30,48,76,.52);--chair:rgba(30,48,76,.26);--cedge:rgba(30,48,76,.40);
+  --cglow:rgba(30,48,76,.13)}
+.tpl[data-tint="coal"]{--frame:#2A2A2A;
+  --page:radial-gradient(120% 95% at 32% 18%,#F6F5F3 0%,#EAE8E4 42%,#DBD8D2 76%,#CFCBC4 100%);
+  --crule:rgba(40,40,40,.50);--chair:rgba(40,40,40,.25);--cedge:rgba(40,40,40,.38);
+  --cglow:rgba(40,40,40,.12)}
+.tpl[data-tint="gold"]{--frame:#0A1512;
+  --page:radial-gradient(120% 85% at 50% 30%,#12241D 0%,#0A1512 55%,#050A08 100%);
+  --cink:#F0E5CA;--csub:#A08F63;--crule:rgba(201,162,71,.42);--chair:rgba(201,162,71,.22);
+  --cedge:rgba(201,162,71,.34);--cglow:rgba(201,162,71,.10)}
+.tpl[data-ratio="vertical"]{aspect-ratio:9/16}
+.tpl[data-ratio="wide"]{aspect-ratio:16/9}
+.paper{flex:1;display:flex;flex-direction:column;color:var(--cink);overflow:hidden;
+  background:var(--page);border:1px solid var(--cedge);padding:2.41cqw 2.59cqw 2.04cqw;
+  box-shadow:0 0 5.5cqw var(--cglow) inset;position:relative}
+.paper::before{content:"";position:absolute;inset:0;pointer-events:none;opacity:.55;
+  background-image:
+    radial-gradient(38% 26% at 12% 18%,var(--cglow) 0%,transparent 70%),
+    radial-gradient(30% 22% at 88% 12%,var(--cglow) 0%,transparent 70%),
+    radial-gradient(42% 30% at 78% 86%,var(--cglow) 0%,transparent 72%),
+    radial-gradient(26% 20% at 22% 78%,var(--cglow) 0%,transparent 70%)}
+.ctop{display:flex;text-align:center;padding-bottom:1.30cqw;flex:none}
+.cell{flex:1;padding:0 1.11cqw;line-height:1.3;min-width:0}
+.cell:not(:last-child){border-inline-end:1px solid var(--chair)}
+.cell b{display:block;font-weight:700;font-size:2.41cqw;text-wrap:balance}
+.cell i{display:block;font-style:normal;font-size:1.67cqw;color:var(--csub);
+  direction:ltr;margin-top:.37cqw;letter-spacing:.04em}
+.chr{height:1px;margin:1.48cqw 0;flex:none;background:var(--crule);opacity:.75}
+/* نِسَبٌ متناسقة: المتن ثلاثة أخماس، والشرح والترجمة خُمسٌ لكلٍّ منهما */
+.cmain{flex:3 1 0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:1.67cqw;padding:1.11cqw;text-align:center;min-height:0;overflow:hidden}
+.ctext{font-size:4.63cqw;line-height:2.05;font-weight:700;display:-webkit-box;
+  -webkit-box-orient:vertical;-webkit-line-clamp:8;overflow:hidden}
+.tpl[data-kind="quran"] .ctext{font-weight:400;font-size:5cqw;line-height:2.15}
+.tpl[data-font="amiri-quran"] .ctext{font-weight:400;font-size:5cqw;line-height:2.15}
+.tpl[data-font="amiri"] .ctext{font-weight:700;font-size:4.63cqw;line-height:2.05}
+.cattr{font-size:2.22cqw;color:var(--csub)}
+.crow{flex:1 1 0;display:flex;flex-direction:column;justify-content:center;
+  text-align:center;padding:0 1.30cqw;min-height:0;overflow:hidden}
+.ccap{font-size:1.85cqw;color:var(--csub);margin-bottom:.74cqw;letter-spacing:.03em}
+.car{font-size:2.5cqw;line-height:1.85;opacity:.92;display:-webkit-box;-webkit-box-orient:vertical;
+  -webkit-line-clamp:4;overflow:hidden}
+.cen{font-size:2.31cqw;line-height:1.6;direction:ltr;opacity:.92;display:-webkit-box;
+  -webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden}
+.marks{display:flex;flex:none;border:1px solid var(--crule)}
+.mark{flex:1;text-align:center;padding:.93cqw .74cqw;min-width:0}
+.mark:not(:last-child){border-inline-end:1px solid var(--crule)}
+.mark b{display:block;font-weight:700;font-size:2.22cqw;color:var(--cink);
+  letter-spacing:.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mark b.ltr{direction:ltr}
+.mark i{display:block;font-style:normal;font-size:1.39cqw;color:var(--csub);margin-top:.28cqw}
+</style></head><body>
+<div class="wrap">
+
+<header>
+  <div class="brand">فلاح<small>FALAH</small></div>
+  <div class="spacer"></div>
+  <div id="who" class="row hidden">
+    <span class="muted" id="whoName"></span>
+    <span class="pill" id="planPill" title="خطّتك"></span>
+    <button class="btn sm ghost" id="btnPlans">الخطط</button>
+    <button class="btn sm ghost" id="btnRefer">ادعُ</button>
+    <button class="btn sm ghost" id="btnSources">المصادر</button>
+    <button class="btn sm ghost" id="btnProfile">الحساب</button>
+    <button class="btn sm ghost" id="btnOut">خروج</button>
+  </div>
+</header>
+
+<!-- ــــــ الدخول ــــــ -->
+<section id="auth" class="card hidden" style="max-width:430px;margin:60px auto">
+  <div class="tabs">
+    <button class="tab on" data-m="login">دخول</button>
+    <button class="tab" data-m="register">حساب جديد</button>
+  </div>
+  <label>البريد</label><input id="email" type="email" autocomplete="email">
+  <div id="regOnly" class="hidden">
+    <div id="inviteBox" class="hidden"><label>رمز الدعوة</label><input id="invite"></div>
+    <label>الاسم</label><input id="name">
+    <label>رمز دعوة صديق <span class="hint">(اختياري — يمنحكما أسبوعين)</span></label>
+    <input id="refcode" placeholder="مثال: K7M2QRP">
+    <label>علامتك على البطاقة</label><input id="wm" placeholder="اسم قناتك">
+  </div>
+  <label>كلمة المرور</label><input id="pass" type="password" autocomplete="current-password">
+  <div class="err" id="authErr"></div>
+  <button class="btn gold" id="btnAuth" style="width:100%">دخول</button>
+  <button class="btn ghost sm" id="btnForgot" style="width:100%;margin-top:10px">نسيت كلمة المرور</button>
+  <p class="hint" style="margin-top:14px">حسابك يحفظ مشاريعك وعلامتك فقط؛ النصوص تبقى في قاعدة المصادر لا في مشروعك.</p>
+</section>
+
+<!-- ــــــ مساحة العمل ــــــ -->
+<section id="work" class="hidden">
+ <div class="grid">
+  <aside class="card">
+    <div class="row"><h2 style="flex:1">مشاريعي</h2>
+      <button class="btn sm gold" id="btnAgent">الوكيل</button>
+      <button class="btn sm ghost" id="btnNew">جديد</button></div>
+    <div class="plist" id="plist"></div>
+    <p class="hint" id="noproj" style="margin-top:10px"></p>
+  </aside>
+
+  <main class="card" id="pane">
+    <p class="hint">اختر مشروعًا أو أنشئ واحدًا لتبدأ.</p>
+  </main>
+ </div>
+</section>
+
+</div>
+<script>
+const $ = s => document.querySelector(s);
+const el = (t, c, x) => { const e = document.createElement(t); if (c) e.className = c;
+  if (x !== undefined) e.textContent = x; return e; };
+const AR = n => String(n).replace(/\d/g, d => "٠١٢٣٤٥٦٧٨٩"[d]);
+
+async function api(path, body) {
+  const o = body ? {method:"POST", headers:{"Content-Type":"application/json","X-FALAH":"1"},
+                    body: JSON.stringify(body)} : {};
+  const r = await fetch(path, o);
+  let d = {}; try { d = await r.json(); } catch (e) {}
+  if (!r.ok) throw new Error(d.error || ("خطأ " + r.status));
+  return d;
+}
+
+/* ــــــ الطابور ــــــ
+   التصيير لا يجري داخل الطلب: الخادم يردّ برقم مهمّة (٢٠٢)، ونستطلعها هنا
+   حتى تنتهي. الفائدة للمستخدم أنه يرى تقدّمًا موصوفًا بدل انتظارٍ صامت،
+   وأن إغلاق التبويب لا يُلغي العمل — يجده حين يعود. */
+async function waitJob(id, onStep) {
+  let wait = 400;                       // يبدأ سريعًا ثم يتمهّل، فلا يُثقل الخادم
+  for (;;) {
+    const d = await api("/app/jobs/" + id);
+    const j = d.job;
+    if (onStep) onStep(j);
+    if (j.state === "done")   return j.result;
+    if (j.state === "failed") throw new Error(j.error || "فشلت المهمّة");
+    if (j.state === "canceled") throw new Error("أُلغيت المهمّة");
+    await new Promise(r => setTimeout(r, wait));
+    wait = Math.min(wait * 1.3, 3000);
+  }
+}
+const jobLabel = j => (j.state === "queued" ? "في الطابور…"
+                     : (j.step || "يُصيَّر…") + " " + AR(j.progress) + "٪");
+
+let ME = null, PROJ = null, MODE = "login", RECITERS = [];
+
+/* ــــــ الدخول ــــــ */
+document.querySelectorAll(".tab[data-m]").forEach(t => t.onclick = () => {
+  document.querySelectorAll(".tab[data-m]").forEach(x => x.classList.toggle("on", x === t));
+  MODE = t.dataset.m;
+  $("#regOnly").classList.toggle("hidden", MODE !== "register");
+  $("#btnAuth").textContent = MODE === "login" ? "دخول" : "أنشئ الحساب";
+  $("#authErr").textContent = "";
+});
+
+$("#btnAuth").onclick = async () => {
+  $("#authErr").textContent = "";
+  const b = {email: $("#email").value, password: $("#pass").value};
+  if (MODE === "register") { b.name = $("#name").value; b.watermark = $("#wm").value;
+                             b.invite = $("#invite").value;
+                             b.ref = ($("#refcode").value || "").trim().toUpperCase(); }
+  try {
+    const d = await api("/app/" + MODE, b);
+    ME = d.user;
+    if (d.referral_note) alert("ملاحظة على رمز الدعوة: " + d.referral_note);
+    enter();
+  } catch (e) { $("#authErr").textContent = e.message; }
+};
+
+$("#btnOut").onclick = async () => {
+  await api("/app/logout", {});
+  if (navigator.serviceWorker && navigator.serviceWorker.controller)
+    navigator.serviceWorker.controller.postMessage("falah:purge");
+  ME = null; PROJ = null; boot();
+};
+
+/* عامل الخدمة: يفتح التطبيق بلا شبكة، ولا يخزّن شيئًا من الحساب.
+   يُسجَّل بعد التحميل حتى لا يزاحم أول رسمٍ للصفحة. */
+if ("serviceWorker" in navigator && location.protocol !== "file:") {
+  addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => {}));
+}
+
+$("#btnProfile").onclick = () => {
+  $("#pane").innerHTML = "";
+  const p = $("#pane");
+  p.append(el("h2", null, "الحساب"));
+  p.append(el("p", "hint", ME.email));
+  const wm = el("input"); wm.value = ME.watermark || "";
+  p.append(el("label", null, "علامتك على البطاقة")); p.append(wm);
+  const save = el("button", "btn gold sm", "حفظ"); save.style.marginTop = "12px";
+  const msg = el("div", "err");
+  save.onclick = async () => {
+    try { const d = await api("/app/profile", {watermark: wm.value});
+          ME = d.user; msg.className = "err ok"; msg.textContent = "حُفظت"; }
+    catch (e) { msg.className = "err"; msg.textContent = e.message; }
+  };
+  p.append(save); p.append(msg);
+
+  /* حذف الحساب من داخل التطبيق — تشترطه إرشادات آبل ٥٫١٫١(v) لكل تطبيقٍ
+     يُنشأ فيه حساب، ويوجبه نظام حماية البيانات. يمحو المشاريع والصادرات
+     والجلسات معًا، ولا يُبقي إلا ما لا يخصّ صاحبه. */
+  const danger = el("div"); danger.style.marginTop = "26px";
+  danger.style.borderTop = "1px solid var(--line)"; danger.style.paddingTop = "16px";
+  danger.append(el("h3", null, "حذف الحساب"));
+  danger.append(el("p", "hint",
+    "يُحذف حسابك ومشاريعك وصادراتك حذفًا لا رجعة فيه. النصوص الشرعية في " +
+    "قاعدة المحتوى ليست ملكًا لحسابك فتبقى كما هي."));
+  const del = el("button", "btn sm", "حذف حسابي نهائيًّا");
+  del.style.marginTop = "10px"; del.style.borderColor = "rgba(200,107,94,.6)";
+  del.style.color = "#E2A79C";
+  del.onclick = async () => {
+    const t = prompt("للتأكيد اكتب: حذف");
+    if ((t || "").trim() !== "حذف") return;
+    try {
+      await api("/app/account/delete", {confirm: "حذف"});
+      if (navigator.serviceWorker && navigator.serviceWorker.controller)
+        navigator.serviceWorker.controller.postMessage("falah:purge");
+      ME = null; PROJ = null; boot();
+    } catch (e) { msg.className = "err"; msg.textContent = e.message; }
+  };
+  danger.append(del); p.append(danger);
+};
+
+/* ــــــ الخطط والاشتراك ــــــ */
+let ENT = null;
+
+async function loadEnt() {
+  try { ENT = await api("/app/entitlements"); } catch (e) { return; }
+  const p = $("#planPill");
+  if (!p) return;
+  const left = ENT.left || {};
+  p.textContent = `${ENT.plan_name} · ${AR(left.cards ?? 0)} بطاقة`;
+  p.className = "pill" + (ENT.plan === "free" ? "" : " ok");
+  p.title = ENT.expires_at
+    ? "ينتهي في " + new Date(ENT.expires_at * 1000).toLocaleDateString("ar")
+    : "بلا انتهاء";
+}
+
+const MONEY = n => n === 0 ? "مجّانًا" : "$" + n;
+
+$("#btnPlans").onclick = async () => {
+  const p = $("#pane"); p.innerHTML = "";
+  p.append(el("h2", null, "الخطط"));
+  const cat = await api("/app/plans");
+  await loadEnt();
+  p.append(el("p", "hint",
+    "الاشتراك يحدّ الكمّ لا الصحّة. لا خطّة تُخفي مصدرًا ولا تُرخي فحصًا."));
+
+  const grid = el("div"); grid.style.cssText =
+    "display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin-top:14px";
+  cat.plans.forEach(pl => {
+    const box = el("div", "item");
+    const mine = ENT && ENT.plan === pl.id;
+    if (mine) box.style.borderColor = "var(--gold)";
+    const h = el("div", "row");
+    h.append(el("b", null, pl.name));
+    if (mine) h.append(el("span", "pill ok", "خطّتك"));
+    box.append(h);
+    box.append(el("div", "hint", pl.tagline));
+    const price = el("div"); price.style.cssText = "font-size:26px;margin:10px 0 2px";
+    price.textContent = MONEY(pl.price.month);
+    box.append(price);
+    box.append(el("div", "hint", pl.price.month ? "في الشهر · " + MONEY(pl.price.year) + " سنويًّا" : "بلا بطاقة"));
+    const ul = el("div"); ul.style.marginTop = "10px";
+    const line = t => { const d = el("div", "hint"); d.textContent = "• " + t; ul.append(d); };
+    line(`${AR(pl.limits.cards)} بطاقة في الشهر`);
+    line(pl.limits.videos ? `${AR(pl.limits.videos)} مقطع فيديو` : "بلا فيديو");
+    line(`${AR(pl.limits.projects)} مشروعًا`);
+    line(pl.features.ratios.length > 1 ? "كل المقاسات" : "المربّع فقط");
+    line(pl.features.designs.length > 1 ? "كل التصاميم والألوان" : "الرقّ العتيق فقط");
+    line(pl.features.falah_mark ? "خانة فلاح تبقى على البطاقة" : "لك رفع خانة فلاح");
+    box.append(ul);
+    if (!mine && pl.id !== "free") {
+      const btn = el("button", "btn gold sm", "اشترك");
+      btn.style.marginTop = "12px";
+      btn.onclick = () => alert(
+        "الشراء يتمّ عبر متجر التطبيقات (App Store / Google Play).\n" +
+        "لم يُربط المتجر بعد — راجع launch/STORES.md.");
+      box.append(btn);
+    }
+    grid.append(box);
+  });
+  p.append(grid);
+
+  if (ENT) {
+    const used = el("div", "item"); used.style.marginTop = "14px";
+    used.append(el("h3", null, "استهلاكك هذا الشهر"));
+    const bar = (label, u, lim) => {
+      const row = el("div"); row.style.margin = "8px 0";
+      row.append(el("div", "hint", `${label}: ${AR(u)} من ${AR(lim)}`));
+      const t = el("div"); t.style.cssText =
+        "height:6px;background:rgba(201,162,71,.14);border-radius:99px;overflow:hidden;margin-top:4px";
+      const f = el("div"); f.style.cssText =
+        `height:100%;background:${u >= lim ? "#C86B5E" : "var(--gold)"};width:${lim ? Math.min(100, u / lim * 100) : 0}%`;
+      t.append(f); row.append(t); used.append(row);
+    };
+    bar("البطاقات", ENT.used.cards || 0, ENT.limits.cards);
+    bar("المقاطع", ENT.used.videos || 0, ENT.limits.videos);
+    bar("المشاريع", ENT.used.projects || 0, ENT.limits.projects);
+    p.append(used);
+    if (ENT.plan !== "free" && ENT.renews) {
+      const cx = el("button", "btn ghost sm", "أوقف التجديد");
+      cx.style.marginTop = "12px";
+      cx.onclick = async () => {
+        if (!confirm("يبقى حقّك إلى نهاية المدّة المدفوعة. أوقف التجديد؟")) return;
+        await api("/app/subscription/cancel", {}); await loadEnt(); $("#btnPlans").click();
+      };
+      p.append(cx);
+    }
+  }
+
+  const always = el("div", "item"); always.style.marginTop = "14px";
+  always.append(el("h3", null, "ما لا يُباع ولا يُمنع"));
+  cat.always.forEach(t => always.append(el("div", "hint", "• " + t)));
+  p.append(always);
+};
+
+/* ــــــ الإحالات ــــــ */
+$("#btnRefer").onclick = async () => {
+  const p = $("#pane"); p.innerHTML = "";
+  p.append(el("h2", null, "ادعُ من ينفعه"));
+  const d = await api("/app/referrals");
+  p.append(el("p", "hint", d.rule));
+
+  const codeBox = el("div", "item"); codeBox.style.marginTop = "12px";
+  codeBox.append(el("h3", null, "رمزك"));
+  const code = el("div"); code.textContent = d.code;
+  code.style.cssText = "font-size:30px;letter-spacing:.22em;direction:ltr;margin:8px 0";
+  codeBox.append(code);
+  const linkRow = el("div", "row");
+  const cp = el("button", "btn sm", "انسخ الرابط");
+  cp.onclick = async () => {
+    try { await navigator.clipboard.writeText(d.link); cp.textContent = "نُسخ ✓"; }
+    catch { prompt("انسخ الرابط:", d.link); }
+  };
+  linkRow.append(cp);
+  const sh = el("button", "btn sm ghost", "شارك");
+  sh.onclick = () => navigator.share
+    ? navigator.share({title: "فَلاح", text: "جرّب فَلاح لصناعة المحتوى الإسلامي الموثَّق", url: d.link})
+    : cp.click();
+  linkRow.append(sh);
+  codeBox.append(linkRow);
+  codeBox.append(el("div", "hint",
+    `لك ${AR(d.reward_days)} يومًا من «${d.reward_plan}» عن كل مدعوٍّ يُنتج بطاقة، ` +
+    `وله ${AR(d.invitee_days)} يومًا من لحظة تسجيله.`));
+  p.append(codeBox);
+
+  const st = el("div", "row"); st.style.marginTop = "12px";
+  st.append(el("span", "pill ok", `${AR(d.counts.rewarded)} مكافأة`));
+  st.append(el("span", "pill", `${AR(d.counts.pending)} بانتظار أول بطاقة`));
+  st.append(el("span", "pill", `${AR(d.days_earned)} يومًا كُسبت`));
+  p.append(st);
+
+  if (d.invites.length) {
+    const list = el("div"); list.style.marginTop = "12px";
+    const AR_ST = {pending: "لم يُنتج بعد", qualified: "قيد المراجعة",
+                   rewarded: "كوفئت", rejected: "مرفوضة"};
+    d.invites.forEach(i => {
+      const row = el("div", "item"); row.style.padding = "10px 12px";
+      const r = el("div", "row");
+      r.append(el("b", null, i.who));
+      r.append(el("span", "pill" + (i.status === "rewarded" ? " ok" : ""), AR_ST[i.status] || i.status));
+      row.append(r); list.append(row);
+    });
+    p.append(list);
+  } else {
+    p.append(el("p", "hint", "لا دعوات بعد."));
+  }
+};
+
+/* ــــــ نسيان كلمة المرور ــــــ */
+$("#btnForgot").onclick = async () => {
+  const email = ($("#email").value || "").trim();
+  if (!email) { $("#authErr").textContent = "اكتب بريدك أولًا"; return; }
+  try {
+    const d = await api("/app/password/forgot", {email});
+    $("#authErr").className = "err ok";
+    $("#authErr").textContent = d.mail_sent
+      ? "أُرسلت رسالةٌ إلى بريدك — افتح رابطها خلال ساعة."
+      : "إن كان البريد مسجَّلًا فالرسالة في طريقها. (خدمة البريد غير مضبوطة في هذا الخادم)";
+  } catch (e) { $("#authErr").className = "err"; $("#authErr").textContent = e.message; }
+};
+
+/* رابط الاستعادة يفتح الصفحة بـ ‎/reset?t=… فتُعرض استمارة كلمة جديدة */
+async function maybeResetScreen() {
+  const q = new URLSearchParams(location.search);
+  const t = q.get("t");
+  const path = location.pathname;
+  if (!t || (path !== "/reset" && path !== "/verify")) return false;
+  if (path === "/verify") {
+    try { await api("/app/verify/confirm", {token: t}); alert("أُكِّد بريدك ✓"); }
+    catch (e) { alert("تعذّر التأكيد: " + e.message); }
+    history.replaceState({}, "", "/");
+    return false;
+  }
+  $("#auth").classList.remove("hidden");
+  $("#work").classList.add("hidden");
+  const box = $("#auth");
+  box.innerHTML = "";
+  box.append(el("h2", null, "كلمة مرور جديدة"));
+  const i1 = el("input"); i1.type = "password"; i1.placeholder = "كلمة المرور الجديدة";
+  box.append(i1);
+  const err = el("div", "err"); box.append(err);
+  const go = el("button", "btn gold", "احفظ وادخل"); go.style.cssText = "width:100%;margin-top:12px";
+  go.onclick = async () => {
+    try {
+      await api("/app/password/reset", {token: t, password: i1.value});
+      history.replaceState({}, "", "/");
+      location.reload();
+    } catch (e) { err.textContent = e.message; }
+  };
+  box.append(go);
+  return true;
+}
+
+/* رمز الدعوة من الرابط ‎/?ref=CODE يملأ الحقل ويفتح تبويب التسجيل */
+function maybeReferralFromLink() {
+  const r = new URLSearchParams(location.search).get("ref");
+  if (!r) return;
+  const tab = document.querySelector('.tab[data-m="register"]');
+  if (tab) tab.click();
+  const f = $("#refcode");
+  if (f) f.value = r.trim().toUpperCase();
+}
+
+/* ــــــ المشاريع ــــــ */
+$("#btnNew").onclick = async () => {
+  const title = prompt("عنوان المشروع؟", "سلسلة جديدة");
+  if (!title) return;
+  const d = await api("/app/projects/create", {title});
+  await loadProjects(); openProject(d.id);
+};
+
+async function loadProjects() {
+  const d = await api("/app/projects");
+  const box = $("#plist"); box.innerHTML = "";
+  $("#noproj").textContent = d.projects.length ? "" : "لا مشاريع بعد.";
+  d.projects.forEach(p => {
+    const it = el("div", "pitem" + (PROJ && PROJ.project.id === p.id ? " on" : ""));
+    it.append(el("b", null, p.title));
+    const SK={night:"ليلي",parch:"رقّ",ivory:"نقي"}, RT={square:"مربّع",vertical:"طولي",wide:"عريض"};
+    it.append(el("span", null, `${AR(p.items)} عناصر · ${RT[p.ratio]||p.ratio} · ${SK[p.skin]||p.skin}`));
+    it.onclick = () => openProject(p.id);
+    box.append(it);
+  });
+}
+
+async function openProject(id) {
+  PROJ = await api("/app/projects/" + id);
+  await loadProjects();
+  renderProject();
+}
+
+function statePill(i) {
+  if (i.state === "ok")    return ["pill ok", "اجتاز " + AR(i.checks_now)];
+  if (i.state === "drift") return ["pill warn", "تغيّر المصدر"];
+  if (i.state === "missing") return ["pill bad", "غير موجود"];
+  return ["pill bad", "محجوب"];
+}
+
+function renderProject() {
+  const p = $("#pane"), P = PROJ.project;
+  p.innerHTML = "";
+
+  const head = el("div", "row");
+  const t = el("h2", null, P.title); t.style.flex = "1";
+  head.append(t);
+  ["night", "parch", "ivory"].forEach(s => {
+    const b = el("button", "btn sm" + (P.skin === s ? " gold" : " ghost"),
+                 {night: "ليلي", parch: "رقّ", ivory: "نقي"}[s]);
+    b.onclick = async () => { await api("/app/projects/update", {id: P.id, skin: s}); openProject(P.id); };
+    head.append(b);
+  });
+  ["square", "vertical", "wide"].forEach(s => {
+    const b = el("button", "btn sm" + (P.ratio === s ? " gold" : " ghost"),
+                 {square: "مربّع", vertical: "طولي", wide: "عريض"}[s]);
+    b.onclick = async () => { await api("/app/projects/update", {id: P.id, ratio: s}); openProject(P.id); };
+    head.append(b);
+  });
+  const del = el("button", "btn sm ghost", "حذف");
+  del.onclick = async () => { if (confirm("يُحذف المشروع نهائيًّا؟")) {
+      await api("/app/projects/delete", {id: P.id}); PROJ = null;
+      $("#pane").innerHTML = '<p class="hint">اختر مشروعًا.</p>'; loadProjects(); } };
+  head.append(del);
+  p.append(head);
+
+  /* العناصر */
+  p.append(el("h3", null, `عناصر المشروع (${AR(PROJ.items.length)})`));
+  if (!PROJ.items.length) p.append(el("p", "hint", "أضف آيةً أو حديثًا من البحث أدناه."));
+  PROJ.items.forEach(i => {
+    const box = el("div", "item");
+    box.append(el("div", "txt", i.card ? i.card.text : "—"));
+    const m = el("div", "meta");
+    const [cls, label] = statePill(i);
+    m.append(el("span", cls, label));
+    if (i.card) m.append(el("span", null, i.card.cells.c1[0] + " · " + i.card.cells.c3[0]));
+    if (i.card && i.card.grade) m.append(el("span", null, i.card.grade));
+    if (i.kind === "quran" && i.state === "ok") {
+      const sel = el("select"); sel.style.width = "auto";
+      RECITERS.forEach(r => { const o = el("option", null, r.name); o.value = r.code; sel.append(o); });
+      const vb = el("button", "btn sm", "مقطع بتلاوة");
+      const vout = el("div"); vout.style.width = "100%";
+      vb.onclick = async () => {
+        vb.disabled = true; vb.textContent = "يُركَّب…";
+        try {
+          const q = await api("/app/video", {project: P.id, item: i.id, reciter: sel.value});
+          const d = await waitJob(q.job.id, j => { vb.textContent = jobLabel(j); });
+          loadEnt();
+          vout.innerHTML = "";
+          const v = document.createElement("video");
+          v.src = "/app/file?p=" + encodeURIComponent(d.file);
+          v.controls = true; v.style.maxWidth = "260px";
+          v.style.marginTop = "10px"; v.style.borderRadius = "6px";
+          vout.append(el("p", "hint", `${d.reciter} · ${AR(d.seconds)} ثانية`)); vout.append(v);
+        } catch (e) { vout.innerHTML = ""; vout.append(el("div", "err", e.message)); }
+        vb.disabled = false; vb.textContent = "مقطع بتلاوة";
+      };
+      m.append(sel); m.append(vb); m.append(vout);
+    }
+    const rm = el("button", "btn sm ghost", "إزالة");
+    rm.onclick = async () => { await api("/app/items/remove", {project: P.id, id: i.id});
+                               openProject(P.id); };
+    m.append(rm);
+    if (i.state === "drift") {
+      const w = el("div", "hint");
+      w.textContent = i.why;
+      w.style.color = "var(--warn)"; w.style.width = "100%";
+      m.append(w);
+      const ac = el("button", "btn sm", "اعتمد النصّ الجديد");
+      ac.onclick = async () => { await api("/app/items/accept-drift", {project: P.id, id: i.id});
+                                 openProject(P.id); };
+      m.append(ac);
+    } else if (i.state !== "ok") {
+      const w = el("div", "hint"); w.textContent = i.why;
+      w.style.color = "var(--bad)"; w.style.width = "100%"; m.append(w);
+    }
+    box.append(m);
+    p.append(box);
+  });
+
+  /* التصدير */
+  const exp = el("button", "btn gold", "صدِّر السلسلة");
+  exp.disabled = !PROJ.exportable;
+  const out = el("div"); out.style.marginTop = "12px";
+  exp.onclick = async () => {
+    exp.disabled = true; exp.textContent = "يُصيَّر…";
+    try {
+      const q = await api("/app/export", {project: P.id});
+      out.innerHTML = "";
+      const prog = el("p", "hint", "في الطابور…"); out.append(prog);
+      const d = await waitJob(q.job.id, j => {
+        prog.textContent = jobLabel(j); exp.textContent = jobLabel(j);
+      });
+      loadEnt();
+      out.innerHTML = "";
+      const th = el("div", "thumbs");
+      d.files.forEach(f => { const a = el("a"); a.href = "/app/file?p=" + encodeURIComponent(f);
+        a.target = "_blank"; const im = el("img"); im.src = a.href; a.append(im); th.append(a); });
+      out.append(el("p", "hint", `${AR(d.files.length)} شرائح — اضغط أي صورة لفتحها بحجمها.`));
+      out.append(th);
+      const c = el("pre", "cap", d.caption); out.append(el("h3", null, "الوصف للنشر")); out.append(c);
+    } catch (e) { out.innerHTML = ""; out.append(el("div", "err", e.message)); }
+    exp.disabled = false; exp.textContent = "صدِّر السلسلة";
+  };
+  const bar = el("div", "row"); bar.style.marginTop = "14px";
+  bar.append(exp);
+  if (!PROJ.exportable && PROJ.items.length)
+    bar.append(el("span", "hint", "فيه عنصرٌ يحتاج مراجعة قبل التصدير."));
+  p.append(bar); p.append(out);
+
+  /* البحث والإضافة */
+  p.append(el("h3", null, "أضف نصًّا"));
+  const s = el("div", "split");
+  s.append(searchBox("quran", "بحث في القرآن"));
+  s.append(searchBox("hadith", "بحث في الحديث"));
+  p.append(s);
+}
+
+function searchBox(kind, label) {
+  const b = el("div");
+  b.append(el("label", null, label));
+  const inp = el("input"); inp.placeholder = kind === "quran" ? "مثال: الصبر" : "مثال: النية";
+  b.append(inp);
+  const res = el("div"); res.style.marginTop = "8px"; b.append(res);
+  let timer;
+  inp.oninput = () => { clearTimeout(timer); timer = setTimeout(run, 350); };
+  async function run() {
+    const q = inp.value.trim();
+    if (q.length < 2) { res.innerHTML = ""; return; }
+    res.innerHTML = '<p class="hint">…</p>';
+    const url = `/${kind}/search?q=${encodeURIComponent(q)}&limit=6&card_only=1`;
+    const rows = await (await fetch(url)).json();
+    res.innerHTML = "";
+    if (!rows.length) { res.append(el("p", "hint", "لا نتائج مفحوصة بهذا اللفظ.")); return; }
+    rows.forEach(r => {
+      const line = el("div", "res");
+      const txt = el("p", null, kind === "quran" ? r.text : r.matn);
+      const sub = el("small", null, kind === "quran"
+        ? `${r.name_ar} · الآية ${AR(r.ayah)}`
+        : `${r.name_ar} · رقم ${AR(r.number_in_book)}${r.grade ? " · " + r.grade : ""}`);
+      txt.append(el("br")); txt.append(sub);
+      const add = el("button", "btn sm", "أضف");
+      add.onclick = async () => {
+        add.disabled = true;
+        const ref = kind === "quran" ? {surah: r.surah, ayah: r.ayah}
+                                     : {book: r.code, no: r.number_in_book};
+        try { await api("/app/items/add", {project: PROJ.project.id, kind, ref});
+              openProject(PROJ.project.id); }
+        catch (e) { add.disabled = false; alert(e.message); }
+      };
+      line.append(txt); line.append(add);
+      res.append(line);
+    });
+  }
+  return b;
+}
+
+/* ــــــ المصادر والإسناد ــــــ */
+const LICENSE_NOTE = {
+  "القرآن الكريم برسم العثماني":
+    "نصّ مشروع تنزيل (Tanzil.net) — رخصة المشاع الإبداعي: يُنسخ حرفيًّا بلا تغيير، بنسبته إلى مصدره."
+};
+$("#btnSources").onclick = async () => {
+  const p = $("#pane"); p.innerHTML = "";
+  p.append(el("h2", null, "المصادر والإسناد"));
+  p.append(el("p", "hint",
+    "كل نصٍّ في فلاح منسوبٌ إلى مصدره. هذه قائمة المصادر التي تُبنى منها البطاقات، وحال ترخيص كلٍّ منها."));
+  const rows = await (await fetch("/sources")).json();
+  (rows.sources || rows).forEach(r => {
+    const box = el("div", "item");
+    box.append(el("div", "txt", r.name));
+    const m = el("div", "meta");
+    m.append(el("span", null, r.origin || ""));
+    if (r.edition) m.append(el("span", null, r.edition));
+    if (r.riwayah) m.append(el("span", null, r.riwayah));
+    const lic = el("span", "pill warn", r.license_status || "غير محدَّد");
+    m.append(lic);
+    box.append(m);
+    if (LICENSE_NOTE[r.name]) box.append(el("div", "hint", LICENSE_NOTE[r.name]));
+    p.append(box);
+  });
+  p.append(el("p", "hint",
+    "نصّ القرآن من مشروع تنزيل — tanzil.net، يُعرض حرفيًّا بلا تعديل. " +
+    "والنصوص التي ما زال ترخيصها قيد المراجعة تُستعمل في الإصدار المغلق حتى يُحسم إذنها."));
+};
+
+/* ــــــ الوكيل: مربّع القالب فوق، ومربّع الأسئلة تحته، سؤالٌ واحدٌ في كل مرّة ــــــ */
+let ANS = {}, ANSL = {}, QCUR = null, DRAFT = null, PREV = null, IDX = 0;
+$("#btnAgent").onclick = () => { ANS = {}; ANSL = {}; IDX = 0; agentStep(); };
+
+const RATIO_AR = {wide:"عريض ١٩٢٠×١٠٨٠", vertical:"طولي ١٠٨٠×١٩٢٠", square:"مربّع ١٠٨٠×١٠٨٠"};
+
+async function agentStep() {
+  const p = $("#pane"); p.innerHTML = "";
+  p.append(el("h2", null, "الوكيل"));
+  p.append(el("p", "hint",
+    "سؤالٌ واحدٌ في كل مرّة، والقالب فوقك يتغيّر مع كل إجابة. لا يُولَّد نصٌّ — إنما يُختار."));
+
+  const stage = el("div", "stage");
+  const box = el("div", "cardbox");
+  const hold = el("div", "cardhold"); hold.id = "hold";
+  const tpl = el("div", "tpl"); tpl.id = "tpl";
+  hold.append(tpl); box.append(hold);
+  const meta = el("div", "cardmeta"); meta.id = "cmeta"; box.append(meta);
+  stage.append(box);
+
+  const ask = el("div", "card"); ask.id = "ask";
+  stage.append(ask); p.append(stage);
+
+  const d = await api("/app/agent", {answers: ANS});
+  ANS = d.answers || ANS;
+  PREV = d.preview || d.plan || null;
+  paintTpl();
+  if (!d.done) return askOne(ask, d.question, d.progress);
+  return summary(ask, d.plan);
+}
+
+function paintTpl() {
+  const tpl = $("#tpl"), hold = $("#hold"), meta = $("#cmeta");
+  const st = (PREV && PREV.style) || {};
+  const ratio = st.ratio || "square";
+  hold.dataset.ratio = ratio;
+  tpl.dataset.ratio = ratio;
+  tpl.dataset.skin = st.skin || "parch";
+  tpl.dataset.tint = st.tint || "auto";
+  tpl.dataset.font = st.font || "auto";
+  tpl.style.setProperty("--cink", (st.ink && st.ink !== "auto") ? st.ink : "");
+  const cards = (PREV && PREV.cards) || [];
+  if (!cards.length) {
+    tpl.dataset.kind = ANS.source_kind || "quran";
+    tpl.innerHTML = '<div class="paper"><div class="cmain">' +
+      '<p class="ctext" style="opacity:.4">﴿ &nbsp; ﴾</p>' +
+      '<p class="cattr">أجب عن الأسئلة، فتُبنى البطاقة أمامك</p></div>' + tplMarks(st) + '</div>';
+    meta.innerHTML = '<span class="hint">لم يُختر نصٌّ بعد.</span>';
+    return;
+  }
+  if (IDX > cards.length - 1) IDX = cards.length - 1;
+  const it = cards[IDX], c = it.card, isQ = it.kind === "quran";
+  tpl.dataset.kind = it.kind;
+  const cs = ["c1","c2","c3","c4"].map(k =>
+    '<div class="cell"><b>' + esc(c.cells[k][0]) + '</b><i>' + esc(c.cells[k][1]) +
+    '</i></div>').join("");
+  let rows = "";
+  const tf = c.tafsir || c.sharh;
+  if (tf) rows += '<div class="chr"></div><div class="crow"><div class="ccap">' +
+    esc(tf.source) + '</div><div class="car">' + esc(tf.text) + '</div></div>';
+  if (c.translation) rows += '<div class="chr"></div><div class="crow"><div class="ccap">' +
+    esc(c.translation.source) + '</div><div class="cen">' + esc(c.translation.text) + '</div></div>';
+  const attr = isQ ? "" : '<div class="cattr">' + esc(c.narrator || "") + '</div>';
+  const body = isQ ? "﴿ " + esc(c.text) + " ﴾" : "«" + esc(c.text) + "»";
+  tpl.innerHTML = '<div class="paper"><div class="ctop">' + cs + '</div><div class="chr"></div>' +
+    '<div class="cmain"><p class="ctext">' + body + '</p>' + attr + '</div>' + rows +
+    '<div class="chr" style="opacity:.35"></div>' + tplMarks(st) + '</div>';
+
+  const dots = cards.map((x, i) => '<button class="dot" data-i="' + i + '" aria-current="' +
+    (i === IDX) + '"></button>').join("");
+  meta.innerHTML = '<div class="t">' + esc(PREV.title || "") + '</div>' +
+    '<div class="row"><span class="pill ok">' + AR(it.checks) + ' فحصًا</span>' +
+    '<span class="pill">' + AR(cards.length) + ' بطاقة</span>' +
+    '<span class="pill">' + RATIO_AR[ratio] + '</span>' +
+    ((PREV.dropped || []).length ? '<span class="pill bad">' + AR(PREV.dropped.length) +
+      ' محجوبة</span>' : '') + '</div>' +
+    (cards.length > 1 ? '<div class="seriesbar">' + dots + '</div>' : "");
+  meta.querySelectorAll(".dot").forEach(b =>
+    b.onclick = () => { IDX = +b.dataset.i; paintTpl(); });
+}
+
+function tplMarks(st) {
+  const w = (st && st.watermark) || ANS.watermark || (ME && ME.watermark) || "علامتك";
+  return '<div class="marks"><div class="mark"><b>' + esc(w) +
+    '</b><i>العلامة المائية للمستخدم</i></div>' +
+    '<div class="mark"><b class="ltr">FALAH</b><i>العلامة المائية للتطبيق</i></div></div>';
+}
+
+function esc(s) { return String(s == null ? "" : s)
+  .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+/* البحث يتجاوز التشكيل وعلامات المصحف والهمزات — نفس ما في المعاينة */
+const nrm = s => String(s || "").toLowerCase()
+  .replace(/[\u064B-\u065F\u0670\u06D6-\u06ED\u0640]/g, "")
+  .replace(/[\u0623\u0625\u0622\u0671]/g, "\u0627")
+  .replace(/\u0649/g, "\u064A").replace(/\u0629/g, "\u0647");
+
+function askOne(host, q, prog) {
+  QCUR = q;
+  DRAFT = (ANS[q.id] != null) ? ANS[q.id]
+        : (q.type === "auto" ? (q.value || "—") : (q.default || null));
+  if (q.type === "auto") { ANS[q.id] = DRAFT; ANSL[q.id] = DRAFT; }
+
+  host.innerHTML = "";
+  const bar = el("div", "bar"); const fill = el("i");
+  fill.style.width = ((q.index - 1) / q.total * 100) + "%"; bar.append(fill); host.append(bar);
+
+  const head = el("div", "row");
+  const h = el("h3", null, q.text); h.style.flex = "1"; h.style.fontSize = "20px";
+  h.style.color = "var(--ink)";
+  head.append(h); head.append(el("span", "pill", AR(q.index) + " / " + AR(q.total)));
+  host.append(head);
+  host.append(el("p", "hint", q.why + (q.note ? "  " + q.note : "")));
+
+  if (q.type === "free") {
+    const i = el("input"); i.type = "text";
+    i.placeholder = q.placeholder || ""; i.value = DRAFT || "";
+    i.style.marginTop = "10px";
+    i.oninput = () => { DRAFT = i.value.trim(); ANS[q.id] = DRAFT; ANSL[q.id] = DRAFT;
+                        $("#nextBtn").disabled = !DRAFT; };
+    i.onkeydown = e => { if (e.key === "Enter") step(1); };
+    host.append(i);
+  } else if (q.type === "number") {
+    const i = el("input"); i.type = "number"; i.min = q.min; i.max = q.max;
+    i.value = DRAFT || q.default || 1; DRAFT = String(i.value);
+    ANS[q.id] = DRAFT; ANSL[q.id] = DRAFT; i.style.marginTop = "10px";
+    i.oninput = () => { DRAFT = String(Math.max(q.min, Math.min(q.max, +i.value || q.min)));
+                        ANS[q.id] = DRAFT; ANSL[q.id] = DRAFT; };
+    host.append(i);
+  } else if (q.type === "auto") {
+    const d = el("div", "auto", q.value || "—"); host.append(d);
+  } else {
+    const opts = q.options || [];
+    let filter = "";
+    const g = el("div", "opts");
+    if (opts.length > 12) {
+      const s = el("input"); s.type = "text"; s.placeholder = "ابحث…"; s.style.marginTop = "10px";
+      s.oninput = () => { filter = s.value.trim(); drawOpts(); };
+      host.append(s);
+    }
+    host.append(g);
+    function drawOpts() {
+      const f = nrm(filter);
+      const list = opts.filter(o => !f || nrm(o.label).indexOf(f) >= 0 ||
+                                    nrm(o.hint).indexOf(f) >= 0);
+      g.innerHTML = list.slice(0, 400).map(o =>
+        '<button class="opt" data-v="' + esc(o.value) + '" aria-pressed="' +
+        (String(DRAFT) === String(o.value)) + '"><b>' + esc(o.label) + '</b>' +
+        (o.hint ? '<span>' + esc(o.hint) + '</span>' : "") + '</button>').join("")
+        || '<p class="hint">لا خيار مفحوصًا هنا — ارجع وغيّر ما قبله.</p>';
+      g.querySelectorAll(".opt").forEach(b => b.onclick = async () => {
+        DRAFT = b.dataset.v;
+        const o = opts.find(x => String(x.value) === String(DRAFT));
+        ANS[q.id] = DRAFT; ANSL[q.id] = o ? o.label : DRAFT;
+        g.querySelectorAll(".opt").forEach(x => x.setAttribute("aria-pressed", x === b));
+        $("#nextBtn").disabled = false;
+        await refreshPreview();
+      });
+    }
+    drawOpts();
+  }
+
+  const nav = el("div", "nav");
+  const back = el("button", "btn ghost", "السابق");
+  back.disabled = q.index === 1; back.onclick = () => step(-1);
+  const next = el("button", "btn gold", q.index === q.total ? "تمّ" : "التالي");
+  next.id = "nextBtn"; next.disabled = DRAFT == null || DRAFT === "";
+  next.onclick = () => step(1);
+  nav.append(back); nav.append(el("div", "sp")); nav.append(next);
+  host.append(nav);
+
+  const cr = el("div", "crumbs");
+  (prog && prog.steps || []).slice(0, q.index - 1).forEach(s => {
+    if (ANS[s] == null) return;
+    const b = el("button", "crumb", (ANSL[s] || ANS[s]).slice(0, 26));
+    b.onclick = () => { const ss = prog.steps; ss.slice(ss.indexOf(s)).forEach(x => {
+      delete ANS[x]; delete ANSL[x]; }); IDX = 0; agentStep(); };
+    cr.append(b);
+  });
+  host.append(cr);
+}
+
+async function refreshPreview() {
+  const d = await api("/app/agent", {answers: ANS});
+  ANS = d.answers || ANS;
+  PREV = d.preview || d.plan || PREV;
+  IDX = 0; paintTpl();
+}
+
+function step(d) {
+  if (d > 0) {
+    if (DRAFT == null || DRAFT === "") return;
+    ANS[QCUR.id] = DRAFT;
+  } else if (QCUR && QCUR.back) {
+    delete ANS[QCUR.back]; delete ANSL[QCUR.back];
+  }
+  agentStep();
+}
+
+function summary(host, pl) {
+  host.innerHTML = "";
+  host.append(el("h3", null, "اكتملت الإجابات"));
+  host.append(el("p", "hint",
+    "البطاقات أعلاه هي ما سيُصدَّر — لا يُضاف إليها نصٌّ من عند التطبيق."));
+  (pl.dropped || []).forEach(x => {
+    const w = el("div", "item"); w.append(el("div", "hint", `سقط ${x.ref}: ${x.why}`));
+    w.style.borderColor = "rgba(200,107,94,.4)"; host.append(w);
+  });
+  const cap = el("pre", "cap", pl.caption); cap.style.whiteSpace = "pre-wrap";
+  cap.style.marginTop = "10px"; host.append(cap);
+  const go = el("button", "btn gold", "أنشئ المشروع"); go.style.marginTop = "12px";
+  go.onclick = async () => {
+    go.disabled = true; go.textContent = "يُبنى…";
+    const r = await api("/app/agent/build", {answers: ANS});
+    await loadProjects(); loadEnt(); openProject(r.project);
+  };
+  const back = el("button", "btn ghost", "السابق"); back.style.marginTop = "12px";
+  back.onclick = () => { const ks = Object.keys(ANS); delete ANS[ks[ks.length - 1]]; agentStep(); };
+  const nav = el("div", "nav"); nav.append(back); nav.append(el("div", "sp")); nav.append(go);
+  host.append(nav);
+}
+
+/* ــــــ الإقلاع ــــــ */
+function enter() {
+  $("#auth").classList.add("hidden");
+  $("#work").classList.remove("hidden");
+  $("#who").classList.remove("hidden");
+  $("#whoName").textContent = ME.name || ME.email;
+  fetch("/reciters").then(r => r.json()).then(d => {
+    RECITERS = Object.entries(d.riwayat || {}).flatMap(([riw, list]) =>
+      list.map(r => ({code: r.code, name: r.name + " · " + riw})));
+  }).catch(() => {});
+  loadEnt();
+  loadProjects();
+}
+/* شريطٌ يُخبر بانقطاع الشبكة بدل أن تسقط الصفحة صامتة */
+function offlineBar(on, why) {
+  let bar = $("#offbar");
+  if (!on) { if (bar) bar.remove(); return; }
+  if (!bar) {
+    bar = el("div"); bar.id = "offbar";
+    bar.style.cssText = "position:fixed;inset-inline:0;bottom:0;z-index:99;" +
+      "background:#2A1F12;color:#F1E7CE;border-top:1px solid rgba(201,162,71,.4);" +
+      "padding:10px 14px;font-size:14px;text-align:center";
+    document.body.append(bar);
+  }
+  bar.textContent = why || "لا اتصال — ما حُفظ من نصوصٍ يُعرض، ولا يُبنى مشروعٌ جديد حتى يعود.";
+}
+addEventListener("online",  () => { offlineBar(false); boot(); });
+addEventListener("offline", () => offlineBar(true));
+
+async function boot() {
+  if (await maybeResetScreen()) return;
+  try {
+    const cfg = await api("/app/config");
+    $("#inviteBox").classList.toggle("hidden", !cfg.invite_required);
+    offlineBar(false);
+  } catch (e) {
+    // بلا اتصال: تُعرض الواجهة على حالها ولا يُترك المستخدم أمام صفحةٍ صامتة
+    offlineBar(true);
+    $("#auth").classList.remove("hidden");
+    $("#work").classList.add("hidden");
+    $("#who").classList.add("hidden");
+    return;
+  }
+  let d;
+  try { d = await api("/app/me"); }
+  catch (e) { offlineBar(true); return; }
+  ME = d.user;
+  if (ME) return enter();
+  $("#auth").classList.remove("hidden");
+  $("#work").classList.add("hidden");
+  $("#who").classList.add("hidden");
+  maybeReferralFromLink();
+}
+boot();
+</script>
+</body></html>

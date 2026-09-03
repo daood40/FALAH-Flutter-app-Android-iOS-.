@@ -1,0 +1,50 @@
+# نشر فلاح: التطبيق خلف خادمٍ أماميّ يتولّى الشهادة والضغط.
+# الاستعمال:  FALAH_DOMAIN=falah.example.com docker compose up -d
+services:
+  app:
+    build: ..
+    restart: unless-stopped
+    environment:
+      FALAH_APP_DB: /data/app.db
+      FALAH_SECURE: "1"                       # كعكةٌ لا تسافر إلا عبر HTTPS
+      FALAH_ORIGIN: "https://${FALAH_DOMAIN}" # يُرفض كل طلب تغييرٍ من غير هذا النطاق
+      FALAH_INVITE: "${FALAH_INVITE:-}"       # إطلاقٌ مغلق: لا حساب إلا برمزٍ تعطيه
+      FALAH_INLINE_WORKER: "0"                # التصيير في خدمةٍ مستقلّة، لا هنا
+      PORT: "8080"
+    volumes:
+      - falah-data:/data                      # app.db — يبقى بعد التحديث
+      - falah-exports:/app/exports            # ثمرة التصيير — يكتبها العامل ويقرؤها الخادم
+    expose: ["8080"]
+
+  # عامل التصيير: بطاقةٌ ≈ ٣ث ومقطعٌ ≈ ٢٦ث. فُصل عن الخادم كي لا يزاحم
+  # استقبالَ الطلبات، ولأنه وحده يحتاج كروميوم وffmpeg وذاكرةً أوسع. يُزاد
+  # عددُه (`--scale worker=3`) حين يطول انتظارُ الطابور — والخادم لا يُمسّ.
+  worker:
+    build: ..
+    restart: unless-stopped
+    depends_on: [app]
+    command: ["python3", "worker.py"]
+    environment:
+      FALAH_APP_DB: /data/app.db              # الطابور نفسه — قاعدةٌ واحدة مشتركة
+      FALAH_WORKERS: "${FALAH_WORKERS:-1}"
+    volumes:
+      - falah-data:/data
+      - falah-exports:/app/exports
+
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on: [app]
+    ports: ["80:80", "443:443"]
+    environment:
+      FALAH_DOMAIN: ${FALAH_DOMAIN:?حدّد النطاق}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  falah-data:
+  falah-exports:
+  caddy-data:
+  caddy-config:

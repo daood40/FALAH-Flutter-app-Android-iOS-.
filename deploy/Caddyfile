@@ -1,0 +1,18 @@
+# شهادة تلقائية من Let's Encrypt، وترويسات تشدّ المتصفّح على الاتصال المشفّر.
+{$FALAH_DOMAIN} {
+	encode gzip zstd
+	reverse_proxy app:8080
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options    "nosniff"
+		X-Frame-Options           "DENY"
+		Referrer-Policy           "same-origin"
+		-Server
+	}
+
+	# التصيير والفيديو يستغرقان ثوانيَ — لا تُقطع قبل أن يتمّا
+	request_body {
+		max_size 2MB
+	}
+}
