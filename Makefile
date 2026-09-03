@@ -9,8 +9,9 @@ PY    ?= python3
 PORT  ?= 8080
 APP   ?= http://localhost:$(PORT)
 
-.PHONY: help dev worker lint typecheck security contract test audit ui failure gate \
-        db migrate migrate-plan status build docker clean install
+.PHONY: help dev worker lint typecheck security deps contract test audit ui failure leak gate gate-all gate-list \
+        db db-check db-backup db-restore-test migrate-check migrate-guard db-safe-migrate \
+        migrate migrate-plan status build docker clean install
 
 help:  ## يعرض هذه القائمة
 	@echo "أوامر فلاح:"
@@ -24,6 +25,31 @@ install:  ## يثبّت اعتماديات التطوير
 
 db:  ## يبني قاعدة المحتوى من raw/ (طويل — مرّةً واحدة)
 	$(PY) build.py
+
+db-check:  ## سلامة القاعدة وأعدادها وحالة الهجرات والنسخ
+	$(PY) dbsafe.py check
+
+db-backup:  ## نسخةٌ حيّة موقَّعةٌ ببصمتها
+	$(PY) dbsafe.py backup
+
+db-restore-test:  ## يسترجع آخر نسخةٍ ويتحقّق منها فعلًا (ويوقّع بيانها)
+	$(PY) dbsafe.py restore-test
+
+migrate-check:  ## بروفةُ الهجرات على نسخةٍ من القاعدة الحقيقية — لا تمسّها
+	$(PY) dbsafe.py migrate-check
+
+migrate-guard:  ## هل يجوز تشغيل هجرةٍ هادمة الآن؟
+	$(PY) dbsafe.py guard
+
+db-safe-migrate:  ## التسلسل الآمن كاملًا قبل أي هجرةٍ هادمة
+	@set -e; \
+	$(PY) dbsafe.py check; \
+	$(PY) dbsafe.py backup; \
+	$(PY) dbsafe.py restore-test; \
+	$(PY) dbsafe.py migrate-check; \
+	$(PY) dbsafe.py guard; \
+	echo; echo "التسلسل تمّ. الهجرة الهادمة لم تُطبَّق بعد — هذا قرارٌ يدويّ:"; \
+	echo "  FALAH_ALLOW_DESTRUCTIVE=1 $(PY) -m falah.migrate"
 
 migrate:  ## يطبّق الهجرات الآمنة
 	$(PY) -m falah.migrate
@@ -52,6 +78,11 @@ typecheck:  ## mypy
 contract:  ## يولّد API.md من الشيفرة
 	$(PY) api_contract.py
 
+deps:  ## فحص ثغرات الاعتماديات (يلزمه شبكة)
+	@if ! command -v pip-audit >/dev/null 2>&1; then \
+	  echo "BLOCKED: pip-audit غير مثبَّت — pip install pip-audit"; exit 1; fi
+	pip-audit -r requirements.txt --progress-spinner off
+
 security:  ## فحص الأسرار والإعداد
 	$(PY) security_scan.py
 
@@ -67,30 +98,24 @@ ui:  ## فحص الواجهة في متصفّح (يلزمه خادمٌ يعمل)
 failure:  ## اختبار الكسر المتعمَّد (يشغّل خوادمه بنفسه)
 	$(PY) failure_test.py
 
+leak:  ## فحص تسريب الأخطاء والسجلّ (يشغّل خادمه بنفسه)
+	$(PY) leak_test.py
+
 docker:  ## يبني صورة الحاوية
 	docker build -t falah:local .
 
 # ═══════════ بوّابة الجودة ═══════════
-# نفس ترتيب `.github/workflows/ci.yml` ونفس شروطه. `set -e` يجعل أول
-# سقوطٍ يُسقط الأمر كلّه — فلا «بُني بنجاح» فوق اختبارٍ ساقط.
-gate:  ## يشغّل بوّابة الجودة كاملةً كما في CI
-	@set -e; \
-	echo "── ١ · lint ──";      ruff check .; \
-	echo "── ٢ · types ──";     mypy .; \
-	echo "── ٣ · secrets ──";   $(PY) security_scan.py; \
-	echo "── ٤ · api contract ──"; $(PY) api_contract.py --check; \
-	echo "── ٥ · migrations ──"; $(PY) -m falah.migrate --status; \
-	echo "── ٦ · unit ──";      $(PY) tests.py | tail -3; \
-	echo "── ٧ · server ──"; \
-	  (fuser -k $(PORT)/tcp 2>/dev/null || true); sleep 1; \
-	  FALAH_INLINE_WORKER=0 PORT=$(PORT) setsid nohup $(PY) app.py > /tmp/gate-app.log 2>&1 & \
-	  setsid nohup $(PY) worker.py > /tmp/gate-worker.log 2>&1 & \
-	  for i in $$(seq 1 60); do curl -fsS $(APP)/healthz >/dev/null 2>&1 && break; sleep 1; done; \
-	  curl -fsS $(APP)/readyz | grep -q '"ready": true'; \
-	echo "── ٨ · audit ──";     APP=$(APP) API=$(APP) $(PY) audit.py | tail -3; \
-	echo "── ٩ · ui ──";        APP=$(APP) $(PY) ui_audit.py | tail -3; \
-	echo "── ١٠ · failure ──";   $(PY) failure_test.py | tail -3; \
-	echo; echo "QUALITY_GATE = PASS"
+# أمرٌ واحد يشغّل الترتيب نفسه الذي في `.github/workflows/ci.yml`. يقف عند
+# أول سقوطٍ حرج ويطبع: ماذا · لماذا · بأي أمر · في أي ملفّ · وما الإصلاح.
+# وما لم يُشغَّل يُقال عنه BLOCKED لا PASS.
+gate:  ## بوّابة الجودة كاملةً — تقف عند أول سقوطٍ وتشرحه
+	$(PY) gate.py
+
+gate-all:  ## البوّابة كاملةً بلا توقّف — لتُري كلَّ ما سقط
+	$(PY) gate.py --keep-going
+
+gate-list:  ## يعرض البوّابات وحرجَها
+	$(PY) gate.py --list
 
 clean:  ## يحذف المؤقّتات والذاكرات (لا يمسّ القواعد ولا الصادرات)
 	find . -name __pycache__ -type d -prune -exec rm -rf {} + 2>/dev/null || true

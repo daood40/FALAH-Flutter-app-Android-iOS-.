@@ -43,6 +43,10 @@ def body_json(h):
 
 class App(BaseHTTPRequestHandler):
     server_version = "FALAH"
+    # `BaseHTTPRequestHandler` يُلحق `sys_version` بترويسة Server، فتصير
+    # «FALAH Python/3.11.15» — أي أنها تقول لمن يبحث أيُّ ثغراتِ بايثون
+    # تنطبق على هذا الخادم بالضبط. تُفرَّغ.
+    sys_version = ""
     protocol_version = "HTTP/1.1"
 
     # ــــــــــــــــــــ أدوات الردّ ــــــــــــــــــــ
@@ -189,7 +193,10 @@ class App(BaseHTTPRequestHandler):
             cc.close()
             ok &= out["content_db"]
         except Exception as e:
-            out["content_db"] = False; out["content_error"] = type(e).__name__; ok = False
+            # سببٌ ثابتٌ يفهمه المشغّل، لا نوعُ استثناءٍ يصف بنيةَ الشيفرة.
+            # والتفصيل يُسجَّل عندنا كما في كل خطأٍ آخر.
+            self.log_error("readyz content_db %s: %s", type(e).__name__, e)
+            out["content_db"] = False; out["content_reason"] = "unreachable"; ok = False
         try:
             c = store.connect()
             try:
@@ -208,7 +215,8 @@ class App(BaseHTTPRequestHandler):
             finally:
                 c.close()
         except Exception as e:
-            out["app_db"] = False; out["app_error"] = type(e).__name__; ok = False
+            self.log_error("readyz app_db %s: %s", type(e).__name__, e)
+            out["app_db"] = False; out["app_reason"] = "unreachable"; ok = False
         out["ready"] = ok
         self.send_json(out, 200 if ok else 503)
 
@@ -559,6 +567,57 @@ class App(BaseHTTPRequestHandler):
         types = {".png": "image/png", ".mp4": "video/mp4", ".txt": "text/plain; charset=utf-8"}
         self.send_file(full, types.get(os.path.splitext(full)[1], "application/octet-stream"))
 
+def check_config():
+    """يتحقّق من الإعداد قبل الاستقبال. السقوط هنا خيرٌ من إعدادٍ صامتٍ خاطئ.
+
+    المبدأ: **ما كان خطؤه يمسّ الأمان يُسقط الإقلاع في الإنتاج**، وما كان
+    نقصًا في ميزةٍ يُطبع تحذيرًا ويمضي. خادمٌ يعمل بكعكةٍ غير مشفَّرة على
+    HTTPS أسوأُ من خادمٍ لا يعمل، لأن أحدًا لن ينتبه.
+
+    و«الإنتاج» يُعلَن بـ`FALAH_ENV=production` ولا يُخمَّن.
+    """
+    prod = os.environ.get("FALAH_ENV", "development").strip().lower() in ("production", "prod")
+    fatal, warn = [], []
+
+    if not os.path.exists(DB):
+        fatal.append(f"قاعدة المحتوى غير موجودة ({os.path.basename(DB)}) — شغّل `make db`")
+    for f in (UI, DEMO):
+        if not os.path.exists(f):
+            fatal.append(f"ملفُّ واجهةٍ مفقود: {os.path.basename(f)}")
+
+    if prod:
+        if not SECURE:
+            fatal.append("FALAH_SECURE=1 لازمٌ في الإنتاج — وإلا سافرت الكعكة بلا تشفير")
+        if not ORIGIN:
+            fatal.append("FALAH_ORIGIN لازمٌ في الإنتاج — بلا حارسٍ لمصدر الطلب")
+        elif not ORIGIN.startswith("https://"):
+            fatal.append(f"FALAH_ORIGIN يجب أن يبدأ بـhttps:// (الآن: {ORIGIN})")
+        if os.environ.get("FALAH_INLINE_WORKER", "1") != "0":
+            warn.append("عاملٌ داخل الخادم في الإنتاج — يزاحم استقبال الطلبات. "
+                        "اضبط FALAH_INLINE_WORKER=0 وشغّل worker.py")
+        if ADMIN_KEY and len(ADMIN_KEY) < 24:
+            fatal.append("FALAH_ADMIN_KEY قصيرٌ جدًّا — لا يقلّ عن ٢٤ محرفًا عشوائيًّا")
+        if not ADMIN_KEY:
+            warn.append("لا FALAH_ADMIN_KEY — منحُ الاشتراكات وإيصالاتُ المتجر معطَّلة")
+        # المتاجر: إمّا مضبوطةٌ كاملةً أو معطَّلةٌ كاملةً — لا نصفَ إعداد
+        ap = [k for k in ("FALAH_APPLE_BUNDLE_ID", "FALAH_APPLE_ISSUER_ID",
+                          "FALAH_APPLE_KEY_ID", "FALAH_APPLE_KEY_P8")
+              if os.environ.get(k)]
+        if ap and not os.environ.get("FALAH_APPLE_ROOT_CA"):
+            fatal.append("مفاتيح آبل مضبوطةٌ بلا FALAH_APPLE_ROOT_CA — "
+                         "لا يُقبل إيصالٌ بلا تحقّقٍ من سلسلته")
+    else:
+        if SECURE and not ORIGIN:
+            warn.append("FALAH_SECURE=1 خارج HTTPS يمنع الكعكة من الوصول")
+
+    if fatal:
+        print("⛔ إعدادٌ ناقصٌ أو خطِر — لن يُقلع الخادم:", file=sys.stderr)
+        for m in fatal: print(f"   • {m}", file=sys.stderr)
+        print("   راجع .env.example", file=sys.stderr)
+        raise SystemExit(78)                      # EX_CONFIG
+    for m in warn: print(f"⚠ {m}", flush=True)
+    return True
+
 def start_inline_worker(n=1):
     """عاملٌ داخل عملية الخادم — ليعمل `python3 app.py` وحده كما كان.
     في الإنتاج يُطفأ (`FALAH_INLINE_WORKER=0`) ويُشغَّل `worker.py` منفصلًا،
@@ -578,7 +637,23 @@ def start_inline_worker(n=1):
     for i in range(max(1, n)):
         threading.Thread(target=loop, args=(f"inline#{i}",), daemon=True).start()
 
+class Server(ThreadingHTTPServer):
+    """طابورُ إصغاءٍ يحتمل الدفعة.
+
+    قياسٌ حقيقيّ: عند ١٠٠ طلبٍ متزامن سقط **٤٨ اتصالًا قبل أن يُقرأ**، لأن
+    `request_queue_size` في `socketserver` خمسةٌ افتراضًا — أي أن ما زاد على
+    خمسةِ اتصالاتٍ منتظرةٍ في لحظةِ الذروة يُرفض في طبقة النظام، لا في
+    الشيفرة. والمستخدم يرى «تعذّر الاتصال» لا رسالةً مفهومة.
+
+    الرفعُ إلى ١٢٨ لا يزيد عملًا ولا ذاكرةً — يزيد صبرَ الطابور فقط. وخلف
+    وكيلٍ أماميّ (Caddy) يقلّ أثرُه، لكن الخادم لا ينبغي أن يعتمد على وجوده.
+    """
+    request_queue_size = int(os.environ.get("FALAH_LISTEN_BACKLOG", 128))
+    daemon_threads = True
+    allow_reuse_address = True
+
 if __name__ == "__main__":
+    check_config()                  # يسقط قبل الاستقبال لا بعده
     store.init()                    # يُنشئ app.db إن لم تكن موجودة
     port = int(os.environ.get("PORT", 8080))
     inline = os.environ.get("FALAH_INLINE_WORKER", "1") != "0"
@@ -587,4 +662,4 @@ if __name__ == "__main__":
           f"{'  · كعكة آمنة' if SECURE else ''}{('  · النطاق ' + ORIGIN) if ORIGIN else ''}"
           f"{'  · عاملٌ داخليّ' if inline else '  · بلا عاملٍ داخليّ (شغّل worker.py)'}",
           flush=True)
-    ThreadingHTTPServer(("0.0.0.0", port), App).serve_forever()
+    Server(("0.0.0.0", port), App).serve_forever()

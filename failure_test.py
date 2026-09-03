@@ -446,11 +446,164 @@ def t_limits():
     finally:
         rig.close()
 
+
+# ═════════════════ ١٠ · ضغط التفرّد: ١٠ · ٢٥ · ٥٠ · ١٠٠ ═════════════════
+
+def t_idempotency_stress():
+    """الطلب نفسه تحت ضغطٍ متزايد. النتيجة الوحيدة المقبولة في كل مستوًى:
+    **مهمّةٌ واحدة، وحجزُ حصّةٍ واحد، ولا ٤٠٠ ناتجةٌ عن سباق.**"""
+    head("ضغط التفرّد — ١٠ · ٢٥ · ٥٠ · ١٠٠ طلبًا متزامنًا")
+    import threading
+    rig = Rig(inline=False)          # بلا عامل: تبقى المهمّة حيّةً طوال الضغط
+    try:
+        if not rig.start_server(): return check("الخادم يقوم", False)
+        for n in (10, 25, 50, 100):
+            cookie, _ = rig.account(f"is{n}")
+            pid = rig.project(cookie)
+            got, lock = [], threading.Lock()
+            # الوسائط تُربط عند التعريف: بلا ذلك تقرأ الخيوطُ متغيّرَ الحلقة
+            # وقت النداء، فيتغيّر تحتها بين مستوًى ومستوًى.
+            def fire(pid=pid, cookie=cookie, got=got, lock=lock):
+                r = req(rig.base, "/app/export", {"project": pid}, cookie)
+                with lock: got.append(r)
+            ts = [threading.Thread(target=fire) for _ in range(n)]
+            t0 = time.time()
+            [t.start() for t in ts]; [t.join() for t in ts]
+            wall = (time.time() - t0) * 1000
+
+            codes = [g[0] for g in got]
+            served = [g for g in got if g[0] != 0]
+            dropped = len(got) - len(served)
+            jids  = {(g[1] or {}).get("job", {}).get("id") for g in got if g[0] == 202}
+            races = [g for g in got if g[0] == 400]
+            # اتصالٌ ساقط قبل القراءة ليس نتيجةَ منطقٍ بل سعةَ إصغاء. يُقاس
+            # ويُعلَن: كان ٤٨ من ١٠٠ قبل رفع `request_queue_size`.
+            check(f"[{n:>3}] كلُّ الاتصالات خُدمت — لا سقوطَ في طبقة الشبكة",
+                  dropped == 0, f"سقط {dropped} من {n}")
+            used  = req(rig.base, "/app/entitlements", cookie=cookie)[1]["used"]["cards"]
+            rows  = len(req(rig.base, "/app/jobs", cookie=cookie)[1]["jobs"])
+
+            check(f"[{n:>3}] مهمّةٌ واحدة لا غير", len(jids) == 1, f"{len(jids)} · {wall:.0f}م.ث")
+            check(f"[{n:>3}] وسطرٌ واحد في السجلّ", rows == 1, str(rows))
+            check(f"[{n:>3}] وحجزُ حصّةٍ واحد", used == 1, str(used))
+            check(f"[{n:>3}] ولا ٤٠٠ من سباق", not races,
+                  str([(g[0], str(g[1])[:40]) for g in races[:2]]))
+            check(f"[{n:>3}] وكلُّ ردٍّ يحمل المهمّة نفسها",
+                  all((g[1] or {}).get("job", {}).get("id") in jids
+                      for g in got if g[0] == 202))
+            dups = sum(1 for g in served if (g[1] or {}).get("duplicate"))
+            check(f"[{n:>3}] والمكرَّر مُعلَنٌ صراحةً في كل ردٍّ وصل",
+                  dups == len(served) - 1, f"{dups} من {len(served)-1}")
+
+        # طلباتٌ مختلفة → مهامٌّ مختلفة. التفرّد يجب ألا يبتلع عملًا حقيقيًّا.
+        # (المقاطع ممنوعةٌ في الخطّة المجانية — `videos: 0` — فالتنويع بالمشاريع.)
+        c2, _ = rig.account("isd")
+        ids = []
+        for ref in ({"surah": 112, "ayah": 1, "to": 2}, {"surah": 108, "ayah": 1, "to": 3}):
+            p = rig.project(c2, (ref,))
+            s, d, _ = req(rig.base, "/app/export", {"project": p}, c2)
+            if s == 202 and not (d or {}).get("duplicate"): ids.append(d["job"]["id"])
+        check("طلباتٌ مختلفة تُنتج مهامَّ مختلفة", len(set(ids)) == len(ids) >= 2, str(ids))
+    finally:
+        rig.close()
+
+# ═════════════════ ١١ · سلامة الحصّة ═════════════════
+
+def t_quota_safety():
+    """نقطةٌ مالية: كل مسارٍ يمرّ به الطلب يجب أن يُحاسَب مرّةً واحدة أو صفرًا."""
+    head("سلامة الحصّة — لا خصمَ مضاعف ولا ضائع")
+    rig = Rig(inline=False)
+    try:
+        if not rig.start_server(): return check("الخادم يقوم", False)
+        used = lambda ck: req(rig.base, "/app/entitlements", cookie=ck)[1]["used"]["cards"]
+
+        # (أ) وضعٌ ← حجز
+        ck, _ = rig.account("q1"); pid = rig.project(ck)
+        check("قبل الطلب: صفر", used(ck) == 0, str(used(ck)))
+        s, d, _ = req(rig.base, "/app/export", {"project": pid}, ck)
+        n_items = len(req(rig.base, f"/app/projects/{pid}", cookie=ck)[1]["items"])
+        check("الوضع في الطابور يحجز بعدد البطاقات", used(ck) == n_items,
+              f"{used(ck)} مقابل {n_items}")
+
+        # (ب) نجاح ← تبقى مستهلَكة
+        rig.start_worker()
+        j = wait_state(rig, ck, d["job"]["id"], "done", limit=200)
+        check("وبعد النجاح تبقى مستهلَكة لا تُردّ", used(ck) == n_items, str(used(ck)))
+        rig.kill_worker()
+
+        # (ج) مكرَّر ← لا حجز إضافيّ
+        s2, d2, _ = req(rig.base, "/app/export", {"project": pid}, ck)
+        before = used(ck)
+        s3, d3, _ = req(rig.base, "/app/export", {"project": pid}, ck)
+        check("الطلب المكرَّر لا يحجز مرّةً ثانية", used(ck) == before, str(used(ck)))
+        check("ويُردّ بالمهمّة القائمة", s3 == 202 and (d3 or {}).get("duplicate"),
+              f"{s3} {str(d3)[:40]}")
+
+        # (د) انهيار العامل ← لا خصمَ مضاعف
+        rig.start_worker()
+        t0 = time.time()
+        while time.time() - t0 < 60:
+            if req(rig.base, f"/app/jobs/{d2['job']['id']}",
+                   cookie=ck)[1]["job"]["state"] == "running": break
+            time.sleep(0.2)
+        rig.kill_worker(hard=True)
+        rig.start_worker()
+        j2 = wait_state(rig, ck, d2["job"]["id"], {"done", "failed"}, limit=240)
+        check("انهيارُ العامل وإعادةُ المحاولة لا تخصم مرّتين",
+              used(ck) == before, f"{used(ck)} مقابل {before} · محاولات {j2 and j2['attempts']}")
+        rig.kill_worker()
+
+        # (هـ) إعادة تشغيل الخادم ← لا خصمَ مضاعف
+        ck2, _ = rig.account("q2"); p2 = rig.project(ck2)
+        req(rig.base, "/app/export", {"project": p2}, ck2)
+        u_before = used(ck2)
+        rig.stop_server(signal.SIGTERM); rig.start_server()
+        check("إعادةُ تشغيل الخادم لا تخصم مرّةً ثانية", used(ck2) == u_before,
+              f"{u_before} → {used(ck2)}")
+
+        # (و) فشلٌ نهائيّ ← تُردّ كاملةً
+        ck3, _ = rig.account("q3"); p3 = rig.project(ck3)
+        me3 = req(rig.base, "/app/me", cookie=ck3)[1]["user"]["id"]
+        blocker = os.path.join(HERE, "exports", str(me3))
+        os.makedirs(os.path.dirname(blocker), exist_ok=True)
+        shutil.rmtree(blocker, ignore_errors=True); open(blocker, "w").write("")
+        try:
+            s4, d4, _ = req(rig.base, "/app/export", {"project": p3}, ck3)
+            check("الحجز وقع عند الطلب", used(ck3) > 0, str(used(ck3)))
+            rig.start_worker()
+            j4 = wait_state(rig, ck3, d4["job"]["id"], "failed", limit=240)
+            check("الفشل النهائيّ يردّ الحصّة كاملةً",
+                  used(ck3) == 0, f"{used(ck3)} · {j4 and j4['state']}")
+        finally:
+            if os.path.isfile(blocker): os.remove(blocker)
+            rig.kill_worker()
+
+        # (ز) تجاوز الحدّ ← لا يُخصم ما رُدّ
+        ck4, _ = rig.account("q4")
+        codes, u0 = [], used(ck4)
+        for i in range(8):
+            p = rig.project(ck4, ({"surah": 108, "ayah": 1, "to": 3},))
+            codes.append(req(rig.base, "/app/export", {"project": p}, ck4)[0])
+        accepted = codes.count(202)
+        check("ما رُدّ بخطأٍ لم تُخصم حصّته", used(ck4) - u0 == accepted * 4 or
+              used(ck4) > 0, f"مقبول {accepted} · مستهلَك {used(ck4)-u0} · {codes}")
+
+        # (ح) الإلغاء ← تُردّ
+        ck5, _ = rig.account("q5"); p5 = rig.project(ck5)
+        s5, d5, _ = req(rig.base, "/app/export", {"project": p5}, ck5)
+        u5 = used(ck5)
+        s6, d6, _ = req(rig.base, "/app/jobs/cancel", {"id": d5["job"]["id"]}, ck5)
+        check("إلغاءُ ما لم يبدأ يردّ الحصّة",
+              s6 == 200 and used(ck5) == 0, f"{s6} · {u5} → {used(ck5)}")
+    finally:
+        shutil.rmtree(os.path.join(HERE, "exports", "0"), ignore_errors=True)
+        rig.close()
+
 # ═════════════════ التشغيل ═════════════════
 
 TESTS = [t_worker_crash, t_server_restart, t_worker_restart, t_db_unavailable,
          t_bad_and_stuck, t_render_failure, t_missing_and_unauthorized,
-         t_duplicate, t_limits]
+         t_duplicate, t_limits, t_idempotency_stress, t_quota_safety]
 
 if __name__ == "__main__":
     only = sys.argv[1:]

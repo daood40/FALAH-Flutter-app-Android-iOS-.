@@ -141,12 +141,12 @@ TOPICS = [
 import glob as _g
 def glob_len(d): return len(_g.glob(os.path.join(d, 'v*.txt')))
 def log(*a): print(*a, flush=True)
-one = lambda s: db.execute(s).fetchone()[0]
 t0 = time.time()
 if os.path.exists(DB): os.remove(DB)
 for ext in ("-wal","-shm"):
     if os.path.exists(DB+ext): os.remove(DB+ext)
-db = sqlite3.connect(DB); db.executescript(SCHEMA)
+db: sqlite3.Connection = sqlite3.connect(DB); db.executescript(SCHEMA)
+one = lambda s: db.execute(s).fetchone()[0]   # بعد `db` لا قبله
 
 def src(code, name, kind, origin, edition, lic, riwayah=None):
     return db.execute("INSERT INTO sources(code,name,kind,origin,edition,riwayah,license_status)"
@@ -167,7 +167,7 @@ s_q2 = src("quran.com.uthmani","القرآن الكريم — النص العث�
 q  = json.load(open(f"{RAW}/quran-uthmani.json"))["data"]
 q2 = {v["verse_key"]: clean(v["text_uthmani"])
       for v in json.load(open(f"{RAW}/quran-com-uthmani.json"))["verses"]}
-plain_map = {}
+plain_map: dict = {}
 vstat = {"exact":0, "orthographic":0, "conflict":0, "missing":0}
 n_bism = 0
 for s in q["surahs"]:
@@ -250,7 +250,8 @@ for bid, code in enumerate(BOOKS, 1):
 
     # فهرس الأحكام من المصدر الثاني، مفتاحه نصُّ الحديث لا رقمه
     # (المصدران يرقّمان بطريقتين مختلفتين، فالنص هو الرابط الموثوق)
-    GRADES, SECOND = {}, {}
+    GRADES: dict = {}
+    SECOND: dict = {}
     gp = f"{RAW}/grades/{code}.json"
     if os.path.exists(gp):
         for h in json.load(open(gp))["hadiths"]:
@@ -434,16 +435,16 @@ if os.path.exists(os.path.join(ENC, "ar.json")):
         # المتن يبدأ بمقدمة الراوي («عن أبي موسى … قال:») — تُفصل ليصحّ
         # الربط بالكتب التسعة، وتُحفظ لتُعرض سطرَ راوٍ تحت النص.
         matn  = full[len(intro):].strip(' "«»:،') if intro and full.startswith(intro) else full
-        gr   = (h.get("grade") or "").strip()
+        gr_enc = (h.get("grade") or "").strip()   # حكمُ الموسوعة، لا حكمُ القاعدة أعلاه
         # «صحيحان» تعني حديثين في مدخل واحد — لا يصلح بطاقةً مفردة
-        ok   = bool(matn) and G.releasable(gr) and 20 <= len(matn) <= 400
-        why  = None if ok else ("مدخلٌ يجمع حديثين" if gr == "صحيحان" else
-                                f"الحكم: {gr}" if gr and not G.releasable(gr) else
+        ok   = bool(matn) and G.releasable(gr_enc) and 20 <= len(matn) <= 400
+        why  = None if ok else ("مدخلٌ يجمع حديثين" if gr_enc == "صحيحان" else
+                                f"الحكم: {gr_enc}" if gr_enc and not G.releasable(gr_enc) else
                                 "المتن خارج مساحة البطاقة" if matn else "بلا متن")
         n_ok += ok
         db.execute("""INSERT INTO enc VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                    (int(hid_), h.get("title"), intro, matn,
-                    fingerprint(matn), core_key(matn), gr, h.get("attribution"),
+                    fingerprint(matn), core_key(matn), gr_enc, h.get("attribution"),
                     h.get("reference"), clean(h.get("explanation") or ""),
                     json.dumps(h.get("hints") or [], ensure_ascii=False),
                     json.dumps(h.get("words_meanings") or [], ensure_ascii=False),
@@ -487,7 +488,7 @@ for i,(ar,en,terms) in enumerate(TOPICS, 1):
 db.commit()
 
 # ═══════════ ربط شرح الموسوعة بالكتب التسعة (مطابقة المتن) ═══════════
-_encidx = {}
+_encidx: dict = {}
 for _r in db.execute("SELECT id, matn FROM enc WHERE explanation IS NOT NULL AND matn IS NOT NULL"):
     _encidx.setdefault(core_key(_r[1], 6), _r[0])
 _added = 0

@@ -42,12 +42,16 @@ warn_redundant_casts = true
 check_untyped_defs = false
 exclude = ["raw/", "templates/", "exports/", "out/", "mobile/", "build/"]
 
-# ما يُفحص نوعيًّا الآن: ما يعمل في الإنتاج (app.py · worker.py · falah/).
-# `build.py` أداةُ بناءٍ تُشغَّل مرّةً خارج الخدمة، و`tests.py` وأخواتها
-# تتلاعب بالأنواع عمدًا لتختبر الحدود. توسيعُ النطاق إليها عملٌ مؤجَّل
-# مذكورٌ في المخاطر — لا مُدَّعًى أنه تمّ.
+# `build.py` **داخلٌ في الفحص الآن**: هو ما يبني قاعدة المحتوى، وخطأُ نوعٍ
+# فيه خطأٌ في النصوص لا في أداة. كان مستثنًى فأُدخل، وسقطت أخطاؤه بعد أن
+# رُفعت الأداةُ ونُظّفت الاستيرادات، فلم يعد للاستثناء سبب.
+#
+# ما يبقى خارجًا: حزمُ الفحص نفسها وأدواتُ التشغيل المساعدة. وسببُ ذلك
+# صريح: هي تتلاعب بالأنواع **عمدًا** لتختبر الحدود — تمرّر نصًّا حيث
+# يُنتظر رقمٌ، وتحقن استثناءات، وتعيد تعريف وحداتٍ في أثناء التشغيل. إلزامُها
+# بالأنواع يعني منعَها من فعل ما وُجدت له.
 [[tool.mypy.overrides]]
-module = ["build", "tests", "audit", "ui_audit", "failure_test", "discovery",
+module = ["tests", "audit", "ui_audit", "failure_test", "leak_test", "discovery",
           "batch", "build_preview", "preview_data", "export_snapshot",
           "fetch_en", "fetch_enc", "review_pack", "store_cli", "icons"]
 ignore_errors = true

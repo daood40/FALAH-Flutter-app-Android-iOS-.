@@ -34,7 +34,12 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: تثبيت أدوات الفحص
-        run: pip install --no-cache-dir ruff==0.14.6 mypy==1.13.0
+        run: pip install --no-cache-dir ruff==0.14.6 mypy==1.13.0 pip-audit==2.10.1
+
+      # ثغرات الاعتماديات: تُسقط الأنبوب. الوصفُ يُطبع كاملًا ليُعرف أيُّها
+      # ولماذا، لا رقمًا مجرَّدًا. ولا `continue-on-error` هنا.
+      - name: ثغرات الاعتماديات — pip-audit
+        run: pip-audit -r requirements.txt --progress-spinner off
 
       - name: Lint — ruff
         run: ruff check .
@@ -132,6 +137,17 @@ jobs:
       - name: اختبار الكسر المتعمَّد
         run: python3 failure_test.py
 
+      - name: فحص تسريب الأخطاء والسجلّ
+        run: python3 leak_test.py
+
+      - name: سلامة القاعدة وبروفة الهجرات
+        run: |
+          set -euo pipefail
+          python3 dbsafe.py check
+          python3 dbsafe.py backup
+          python3 dbsafe.py restore-test
+          python3 dbsafe.py migrate-check
+
       - name: سجلّات الخادم والعامل عند الفشل
         if: failure()
         run: |
@@ -149,6 +165,23 @@ jobs:
 
       - name: بناء الصورة
         run: docker build -t falah:${{ github.sha }} .
+
+      - name: دخانٌ على الصورة — الخادم والعامل والحجم المشترك
+        run: |
+          set -euo pipefail
+          docker run -d --name falah-smoke -p 8080:8080 \
+            -e FALAH_INLINE_WORKER=1 falah:${{ github.sha }}
+          for i in $(seq 1 60); do
+            curl -fsS http://localhost:8080/healthz >/dev/null 2>&1 && break; sleep 2; done
+          curl -fsS http://localhost:8080/healthz | grep -q '"live": true'
+          curl -fsS http://localhost:8080/readyz  | grep -q '"ready": true'
+          # الملفّات الثابتة موجودةٌ في الصورة فعلًا لا في التطوير وحده
+          curl -fsS http://localhost:8080/manifest.webmanifest >/dev/null
+          curl -fsS http://localhost:8080/sw.js >/dev/null
+          # وفحص الحاوية نفسه يمرّ
+          test "$(docker inspect -f '{{.State.Health.Status}}' falah-smoke)" != "unhealthy"
+          docker logs falah-smoke | tail -20
+          docker rm -f falah-smoke
 
       - name: التحقّق من إعداد النشر
         run: |

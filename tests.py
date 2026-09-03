@@ -469,6 +469,13 @@ check("وتردّ ٥٠٣ إن لم تكن جاهزة", "200 if ok else 503" in _
 check("وصمتُ العمّال تحذيرٌ لا إسقاطُ جاهزية — الخادم يستقبل ويضع في الطابور",
       "worker_warning" in _appsrc)
 
+# سعةُ الإصغاء: قياسٌ كشف أن ٤٨ من ١٠٠ اتصالٍ كانت تسقط قبل أن تُقرأ
+check("طابور الإصغاء مرفوعٌ عن الافتراضيّ (٥)",
+      APP.Server.request_queue_size >= 128, str(APP.Server.request_queue_size))
+check("وقابلٌ للضبط من البيئة", "FALAH_LISTEN_BACKLOG" in _appsrc)
+check("والخيوط خادمةٌ لا تمنع الإطفاء", APP.Server.daemon_threads is True)
+
+
 # عقد الـAPI
 import api_contract as _AC
 _undoc, _stale, _ghost = _AC.audit()
@@ -534,8 +541,12 @@ check("الحاوية وخطّ التكامل يثبّتان من الملفّ �
       "-r requirements.txt" in open(os.path.join(_root, "Dockerfile")).read()
       and "-r requirements.txt" in open(os.path.join(
           _root, ".github", "workflows", "ci.yml")).read())
-check("ونقصُ فحص الثغرات مذكورٌ لا مسكوتٌ عنه",
-      "pip-audit" in _req and "لا يوجد" in _req)
+check("وفحص الثغرات موصوفٌ بنتيجته لا بوعدٍ به",
+      "pip-audit" in _req and "make deps" in _req and "صفرًا" in _req)
+check("والبوّابة تشمل فحص الاعتماديات",
+      "pip-audit" in open(os.path.join(_root, "Makefile")).read()
+      and "pip-audit" in open(os.path.join(
+          _root, ".github", "workflows", "ci.yml"), encoding="utf-8").read())
 
 # خطّ التكامل: بوّابةٌ لا تُتجاوز
 _ci = open(os.path.join(_root, ".github", "workflows", "ci.yml"), encoding="utf-8").read()
@@ -549,6 +560,22 @@ check("وبوّابةٌ واحدة تُلخّص الكلّ وتُشترط في �
 for _step in ("ruff check", "mypy", "security_scan.py", "api_contract.py --check",
               "tests.py", "audit.py", "ui_audit.py", "failure_test.py", "docker build"):
     check(f"خطّ التكامل يشمل: {_step}", _step in _ci)
+
+# الخطوات التي أُضيفت في التصليب — تُشترط في CI صراحةً
+for _step in ("pip-audit", "leak_test.py", "dbsafe.py restore-test",
+              "dbsafe.py migrate-check", "docker run", "healthz", "readyz"):
+    check(f"وخطّ التكامل يشمل: {_step}", _step in _ci)
+check("ودخانُ الصورة يتحقّق من الملفّات الثابتة فيها",
+      "manifest.webmanifest" in _ci and "sw.js" in _ci)
+check("وبوّابةٌ واحدة تُشغَّل بأمرٍ واحد محلّيًّا",
+      os.path.exists(os.path.join(_root, "gate.py"))
+      and "gate.py" in open(os.path.join(_root, "Makefile")).read())
+_g = open(os.path.join(_root, "gate.py"), encoding="utf-8").read()
+check("والبوّابة تُصنّف المحجوب BLOCKED لا PASS",
+      '"BLOCKED"' in _g and "لا يُحسب نجاحًا" in _g)
+check("وتطبع سببَ السقوط وأمرَه وملفَّه واقتراحَ إصلاحه",
+      all(x in _g for x in ("reason", "command", "file", "fix")))
+
 check("والأوامر نفسها متاحةٌ محلّيًّا بـmake gate",
       all(x in open(os.path.join(_root, "Makefile")).read()
           for x in ("ruff check", "mypy", "security_scan.py", "tests.py",
@@ -1297,8 +1324,238 @@ check("والمصدر نفسه يقارن الطول قبل الأرقام",
       "len(rows) == to - ayah + 1" in open(
           os.path.join(os.path.dirname(os.path.abspath(__file__)), "api.py")).read())
 
-print("\n▸ الهجرات")
+
+
+
+print("\n▸ تحقّق الإعداد عند الإقلاع")
+def _cfg(expect_fail, **kw):
+    """يُعيد تحميل app ببيئةٍ معيّنة ويقول: أسقط الإقلاع أم لا؟"""
+    old = {k: os.environ.get(k) for k in kw}
+    for k, v in kw.items():
+        if v is None: os.environ.pop(k, None)
+        else: os.environ[k] = v
+    try:
+        importlib.reload(APP)
+        try:
+            APP.check_config(); failed = False
+        except SystemExit as e:
+            failed = True; code = e.code
+        return failed
+    finally:
+        for k, v in old.items():
+            if v is None: os.environ.pop(k, None)
+            else: os.environ[k] = v
+        importlib.reload(APP)
+
+check("إنتاجٌ بلا FALAH_SECURE يسقط",
+      _cfg(True, FALAH_ENV="production", FALAH_SECURE=None,
+           FALAH_ORIGIN="https://x.com", FALAH_INLINE_WORKER="0"))
+check("إنتاجٌ بلا FALAH_ORIGIN يسقط",
+      _cfg(True, FALAH_ENV="production", FALAH_SECURE="1",
+           FALAH_ORIGIN=None, FALAH_INLINE_WORKER="0"))
+check("إنتاجٌ بنطاقٍ غير مشفَّر يسقط",
+      _cfg(True, FALAH_ENV="production", FALAH_SECURE="1",
+           FALAH_ORIGIN="http://x.com", FALAH_INLINE_WORKER="0"))
+check("إنتاجٌ بمفتاح إدارةٍ قصير يسقط",
+      _cfg(True, FALAH_ENV="production", FALAH_SECURE="1",
+           FALAH_ORIGIN="https://x.com", FALAH_INLINE_WORKER="0",
+           FALAH_ADMIN_KEY="short"))
+check("إنتاجٌ مضبوطٌ يمرّ",
+      not _cfg(False, FALAH_ENV="production", FALAH_SECURE="1",
+               FALAH_ORIGIN="https://x.com", FALAH_INLINE_WORKER="0",
+               FALAH_ADMIN_KEY="k"*32))
+check("والتطوير لا يشترط شيئًا من ذلك",
+      not _cfg(False, FALAH_ENV="development", FALAH_SECURE=None,
+               FALAH_ORIGIN=None, FALAH_INLINE_WORKER=None))
+_asrc = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "app.py")).read()
+check("الفحص يجري قبل الاستقبال لا بعده",
+      _asrc.index("check_config()") < _asrc.index("serve_forever"))
+check("ويخرج برمز EX_CONFIG لا برمزٍ عامّ", "SystemExit(78)" in _asrc)
+check("و«الإنتاج» يُعلَن ولا يُخمَّن", 'FALAH_ENV' in _asrc)
+
+print("\n▸ حارس الهجرات الهادمة")
 from falah import migrate as MG
+import dbsafe as _DS
+_bk = tempfile.mkdtemp()
+def _env(**kw):
+    old = {k: os.environ.get(k) for k in kw}
+    for k, v in kw.items():
+        if v is None: os.environ.pop(k, None)
+        else: os.environ[k] = v
+    return old
+def _restore(old):
+    for k, v in old.items():
+        if v is None: os.environ.pop(k, None)
+        else: os.environ[k] = v
+
+# ١ · بيئة تطوير: الحارس لا يمنع
+_o = _env(FALAH_ENV="development", FALAH_BACKUP_DIR=_bk)
+check("في التطوير لا يمنع الحارس", MG.production_guard()[0])
+
+# ٢ · إنتاج بلا نسخة: يمنع
+_env(FALAH_ENV="production")
+_g, _why = MG.production_guard()
+check("في الإنتاج بلا نسخةٍ أصلًا: يمنع", not _g)
+check("ويقول السبب وما العمل", "مُسترجَعة" in _why and "restore-test" in _why, _why[:60])
+
+# ٣ · نسخةٌ موجودةٌ لم تُسترجَع: **لا تكفي** — هذا لبّ القاعدة
+import json as _j4
+open(os.path.join(_bk, "app-x.db.gz"), "wb").write(b"x")
+_j4.dump({"verified_at": None}, open(os.path.join(_bk, "app-x.db.gz.json"), "w"))
+check("نسخةٌ لم تُسترجَع لا تُعدّ نسخة", not MG.production_guard()[0])
+
+# ٤ · نسخةٌ مُسترجَعةٌ موقَّعة: يسمح
+_j4.dump({"verified_at": "2026-01-01T00:00:00"},
+         open(os.path.join(_bk, "app-x.db.gz.json"), "w"))
+check("النسخة المسترجَعة الموقَّعة تفتح الباب", MG.production_guard()[0])
+
+# ٥ · والإذن الصريح وحده لا يتخطّى الحارس
+_j4.dump({"verified_at": None}, open(os.path.join(_bk, "app-x.db.gz.json"), "w"))
+_env(FALAH_ALLOW_DESTRUCTIVE="1")
+_tmpdb = os.path.join(tempfile.mkdtemp(), "g.db")
+_gc = ST.init(_tmpdb)
+_ran, _held = MG.run(_gc, quiet=True)          # يقرأ الإذن من البيئة
+_gc.close()
+check("الإذن الصريح لا يتخطّى الحارس في الإنتاج",
+      any(n == "jobs_state_guard" for _v, n in _held), str(_held))
+_restore(_o)
+
+# ٦ · أدوات السلامة موجودةٌ وتعمل
+check("أوامر السلامة كلّها معرَّفة",
+      set(_DS.CMDS) == {"check", "backup", "restore-test", "migrate-check", "guard"})
+_mk = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "Makefile")).read()
+for _c in ("db-check", "db-backup", "db-restore-test", "migrate-check",
+           "migrate-guard", "db-safe-migrate"):
+    check(f"وأمرٌ في Makefile: {_c}", f"\n{_c}:" in _mk)
+
+# ٧ · النسخ والاسترجاع فعلًا — لا دعوى
+_src = os.path.join(tempfile.mkdtemp(), "src.db")
+_sc = ST.init(_src)
+_su = AU.register(_sc, _m("bk"), _pw, "نسخة", "ق")
+PJ.create(_sc, _su, "مشروعٌ للنسخ", "series", "parch", "square", "ق")
+_sc.commit(); _sc.close()
+_before = _DS.counts(_src)
+_bk2 = tempfile.mkdtemp()
+_o2 = _env(FALAH_BACKUP_DIR=_bk2)
+_gz = _DS.cmd_backup(_src, quiet=True)
+_restore(_o2)
+check("النسخة تُكتب مضغوطةً ومعها بيانُها",
+      os.path.exists(_gz) and os.path.exists(_gz + ".json"))
+_man = _j4.load(open(_gz + ".json"))
+check("البيان يحمل البصمة والأعداد",
+      len(_man["sha256_uncompressed"]) == 64 and _man["counts"] == _before)
+check("والبيان يبدأ غيرَ متحقَّقٍ منه — لا يُوقَّع بالنسخ", _man["verified_at"] is None)
+import gzip as _gzip, shutil as _sh2
+_out = os.path.join(tempfile.mkdtemp(), "r.db")
+with _gzip.open(_gz, "rb") as _fi, open(_out, "wb") as _fo: _sh2.copyfileobj(_fi, _fo)
+check("المسترجَعة سليمةٌ وأعدادها مطابقة",
+      _DS.integrity(_out)[0] == "ok" and _DS.counts(_out) == _before)
+check("والمستخدمُ المنسوخ موجودٌ في المسترجَعة",
+      _sq.connect(_out).execute("SELECT COUNT(*) FROM users").fetchone()[0]
+      == _before["users"])
+
+print("\n▸ سلسلة شهادات آبل — تحقّقٌ حقيقيّ بجذرٍ مولَّد")
+# لماذا هنا لا ارتجالًا: هذه أخطر شيفرةٍ في المشروع — منها يُشتقّ الحقّ
+# المالي. وقد رُفعت `cryptography` في هذه المرحلة، فوجب أن يبقى الاختبار
+# دائمًا يحرسها لا أن يُشغَّل مرّةً ويُنسى.
+import base64 as _b64, datetime as _dt, json as _j3
+from cryptography import x509 as _x509
+from cryptography.x509.oid import NameOID as _OID
+from cryptography.hazmat.primitives import hashes as _hs, serialization as _ser
+from cryptography.hazmat.primitives.asymmetric import ec as _ec, utils as _ecu
+from falah.stores import apple as _AP2
+
+def _mkkey(): return _ec.generate_private_key(_ec.SECP256R1())
+
+def _mkcert(subject, key, issuer_name, issuer_key, ca=False, days=(-1, 365)):
+    now = _dt.datetime.now(_dt.timezone.utc)
+    b = (_x509.CertificateBuilder()
+         .subject_name(_x509.Name([_x509.NameAttribute(_OID.COMMON_NAME, subject)]))
+         .issuer_name(issuer_name)
+         .public_key(key.public_key())
+         .serial_number(_x509.random_serial_number())
+         .not_valid_before(now + _dt.timedelta(days=days[0]))
+         .not_valid_after(now + _dt.timedelta(days=days[1]))
+         .add_extension(_x509.BasicConstraints(ca=ca, path_length=None), critical=True))
+    return b.sign(issuer_key, _hs.SHA256())
+
+def _chain(leaf_days=(-1, 365)):
+    rk = _mkkey(); rn = _x509.Name([_x509.NameAttribute(_OID.COMMON_NAME, "Test Root")])
+    root = _mkcert("Test Root", rk, rn, rk, ca=True)
+    ik = _mkkey(); inter = _mkcert("Test Inter", ik, root.subject, rk, ca=True)
+    lk = _mkkey(); leaf = _mkcert("Test Leaf", lk, inter.subject, ik, days=leaf_days)
+    return (rk, root), (ik, inter), (lk, leaf)
+
+def _sign_jws(payload, leaf_key, certs):
+    x5c = [_b64.b64encode(c.public_bytes(_ser.Encoding.DER)).decode() for c in certs]
+    b64u = lambda b: _b64.urlsafe_b64encode(b).decode().rstrip("=")
+    h = b64u(_j3.dumps({"alg": "ES256", "x5c": x5c}).encode())
+    p = b64u(_j3.dumps(payload, ensure_ascii=False).encode())
+    der = leaf_key.sign(f"{h}.{p}".encode(), _ec.ECDSA(_hs.SHA256()))
+    r, sv = _ecu.decode_dss_signature(der)
+    raw = r.to_bytes(32, "big") + sv.to_bytes(32, "big")
+    return f"{h}.{p}.{b64u(raw)}"
+
+(_rk, _root), (_ik, _inter), (_lk, _leaf) = _chain()
+_rootpem = os.path.join(tempfile.mkdtemp(), "root.cer")
+open(_rootpem, "wb").write(_root.public_bytes(_ser.Encoding.DER))
+_pay = {"transactionId": "T-1", "productId": "creator.month", "bundleId": "com.example.falah"}
+_good = _sign_jws(_pay, _lk, [_leaf, _inter, _root])
+
+_got = _AP2.verify_jws(_good, root_ca=_rootpem)
+check("سلسلةٌ صحيحة تُقبل وتُفكّ حمولتها",
+      _got.get("transactionId") == "T-1", str(_got)[:60])
+
+# جذرٌ أجنبيّ: السلسلة سليمةٌ في نفسها لكنها لا تنتهي إلى جذرنا
+(_fk, _foreign), _, _ = _chain()
+_fpem = os.path.join(os.path.dirname(_rootpem), "foreign.cer")
+open(_fpem, "wb").write(_foreign.public_bytes(_ser.Encoding.DER))
+check("جذرٌ أجنبيّ يُرفض ولو صحّت السلسلة",
+      _try_err(lambda: _AP2.verify_jws(_good, root_ca=_fpem), _AP2.AppleError))
+
+# حمولةٌ عُبث بها: التوقيع لم يعد يطابقها
+_h, _p, _s = _good.split(".")
+_tam = _j3.dumps({**_pay, "productId": "studio.year"}).encode()
+_p2 = _b64.urlsafe_b64encode(_tam).decode().rstrip("=")
+check("تبديلُ الحمولة بعد التوقيع يُكشف",
+      _try_err(lambda: _AP2.verify_jws(f"{_h}.{_p2}.{_s}", root_ca=_rootpem), _AP2.AppleError))
+
+# توقيعٌ عُبث به
+_s2 = _s[:-4] + ("AAAA" if _s[-4:] != "AAAA" else "BBBB")
+check("تبديلُ التوقيع نفسه يُكشف",
+      _try_err(lambda: _AP2.verify_jws(f"{_h}.{_p}.{_s2}", root_ca=_rootpem), _AP2.AppleError))
+
+# شهادةٌ منتهيةٌ زمنًا
+(_rk3, _root3), (_ik3, _i3), (_lk3, _l3) = _chain(leaf_days=(-40, -10))
+_r3 = os.path.join(os.path.dirname(_rootpem), "r3.cer")
+open(_r3, "wb").write(_root3.public_bytes(_ser.Encoding.DER))
+_expired = _sign_jws(_pay, _lk3, [_l3, _i3, _root3])
+check("شهادةٌ منتهيةُ الصلاحية تُرفض",
+      _try_err(lambda: _AP2.verify_jws(_expired, root_ca=_r3), _AP2.AppleError))
+
+# سلسلةٌ مبتورة: الوسيط محذوف فلا يُوصل الورقةَ بالجذر
+_broken = _sign_jws(_pay, _lk, [_leaf, _root])
+check("سلسلةٌ مبتورةُ الوسيط تُرفض",
+      _try_err(lambda: _AP2.verify_jws(_broken, root_ca=_rootpem), _AP2.AppleError))
+
+# بلا جذرٍ أصلًا — لا يُقبل شيءٌ على عِلّاته
+_oldroot = os.environ.pop("FALAH_APPLE_ROOT_CA", None)
+check("بلا جذرٍ مضبوط لا يُقبل إيصالٌ البتّة",
+      _try_err(lambda: _AP2.verify_jws(_good), _AP2.AppleError))
+if _oldroot is not None: os.environ["FALAH_APPLE_ROOT_CA"] = _oldroot
+
+for _bad in ("", "x.y", "aaa.bbb.ccc", None, "..", "a.b.c.d"):
+    check(f"مدخلٌ مشوّهٌ يُردّ خطأً معروفًا لا انهيارًا: {_bad!r}",
+          _try_err(lambda b=_bad: _AP2.verify_jws(b, root_ca=_rootpem), _AP2.AppleError))
+
+check("والمكتبة المستعملة هي المثبَّتة في requirements",
+      __import__("cryptography").__version__ ==
+      _re2.search(r"cryptography==([0-9.]+)",
+                  open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                    "requirements.txt")).read()).group(1),
+      __import__("cryptography").__version__)
+
+print("\n▸ الهجرات")
 check("الهجرات مرقَّمةٌ بلا تكرار",
       len({m[0] for m in MG.MIGRATIONS}) == len(MG.MIGRATIONS))
 check("كلٌّ منها مصنَّفةٌ هادمةً أو آمنة",
@@ -1315,6 +1572,51 @@ check("ولا تتكرّر إن أُعيد تشغيلها", MG.run(ac, allow_des
 check("السجلّ يحفظ ما طُبِّق ومتى",
       ac.execute("SELECT COUNT(*) n FROM schema_migrations").fetchone()["n"]
       == len(MG.MIGRATIONS))
+
+# انحرافُ المسارين: قاعدةٌ جديدة وقاعدةٌ مهاجَرة يجب أن تنتهيا إلى الشكل
+# نفسه. كشفَ الاختلافَ تشغيلُ البوّابة على قاعدةٍ جديدة لا مهاجَرة.
+def _shape(path):
+    c = _sq.connect(path)
+    try:
+        idx = {r[0]: " ".join((r[1] or "").split())
+               for r in c.execute("""SELECT name, sql FROM sqlite_master
+                                     WHERE type='index' AND tbl_name='jobs'
+                                     AND name NOT LIKE 'sqlite_%'""")}
+        cols = [d[1] for d in c.execute("PRAGMA table_info(jobs)")]
+        return idx, cols
+    finally:
+        c.close()
+
+_fresh = os.path.join(tempfile.mkdtemp(), "fresh.db")
+ST.init(_fresh).close()
+_migd = os.path.join(tempfile.mkdtemp(), "migd.db")
+# قاعدةٌ «قديمة»: تُبنى بشكلٍ سابقٍ ثم تُهاجَر — كما تفعل قاعدة الإنتاج
+_oc = _sq.connect(_migd)
+_oc.executescript(ST.SCHEMA.replace(
+    "  CHECK (state IN ('queued','running','done','failed','canceled')),\n", "")
+    .replace("  CHECK (attempts >= 0 AND attempts <= max_attempts + 1),\n", "")
+    .replace("  CHECK (progress BETWEEN 0 AND 100)\n", "")
+    .replace("  idem_key     TEXT,                           -- بصمة (صاحب+نوع+حمولة): تمنع التكرار\n", "")
+    .replace("  not_before   INTEGER NOT NULL DEFAULT 0,     -- لا تُسحب قبل هذا الوقت (تراجعٌ أُسّيّ)\n", "")
+    .replace("  heartbeat    INTEGER,", "  heartbeat    INTEGER"))
+_oc.execute("CREATE INDEX IF NOT EXISTS ix_jobs_queue ON jobs(state, created_at)")
+_oc.commit(); _oc.close()
+_mc = ST.connect(_migd)
+MG.run(_mc, allow_destructive=True, quiet=True)
+_mc.close()
+
+_fi, _fc = _shape(_fresh)
+_mi, _mc2 = _shape(_migd)
+check("الأعمدة نفسها في الجديدة والمهاجَرة", _fc == _mc2,
+      str(set(_fc) ^ set(_mc2)))
+check("والفهارس نفسها اسمًا", set(_fi) == set(_mi), str(set(_fi) ^ set(_mi)))
+check("وتعريفًا", all(_fi[k] == _mi[k] for k in _fi),
+      str({k: (_fi[k], _mi[k]) for k in _fi if _fi[k] != _mi.get(k)}))
+check("وفهرس الطابور يشمل not_before — العمود الذي يستعلم به السحب",
+      any("not_before" in v for v in _fi.values()), str(list(_fi)))
+check("ولا يبقى فهرسٌ باسمٍ مؤقّت",
+      not any("queue2" in k for k in list(_fi) + list(_mi)))
+
 check("القاعدة ما زالت تعمل بعد الهجرة الهادمة",
       JQ.enqueue(ac, _uq, "export", {"project": _pq, "after": 1}, {})["state"] == "queued")
 check("والقيد يرفض حالةً غير معروفة",
