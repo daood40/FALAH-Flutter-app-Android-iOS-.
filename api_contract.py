@@ -16,25 +16,22 @@ def read(name):
     return open(os.path.join(HERE, name), encoding="utf-8").read()
 
 def content_routes():
-    """مسارات القراءة في api.py."""
-    src = read("api.py")
-    out = []
-    for m in re.finditer(r'(?:if|elif) p == "(/[a-z/]+)"', src):
-        out.append(m.group(1))
-    for m in re.finditer(r'p\.startswith\("(/[a-z]+)/"\)', src):
-        out.append(m.group(1) + "/{id}")
-    return sorted(set(out))
+    """مسارات القراءة — من إعلان `falah/content_routes.py` لا من نصّ الشيفرة.
+
+    كانت تُستخرج بتعبيرٍ نمطيّ من `api.py`: يقرأ `p == "…"` ويأمل ألّا يفوته
+    شيء. وكان ذلك أضعفَ ممّا يبدو — مسارٌ يُكتب بصيغةٍ أخرى يغيب عن العقد
+    بلا صوت. صارت المساراتُ بياناتٍ تُقرأ، فما في الجدول هو ما في العقد.
+    """
+    from falah import content_routes as CR
+    return sorted(set(CR.declared()))
 
 def app_routes():
-    """مسارات /app في app.py، مفصولةً قراءةً وكتابة."""
-    src = read("app.py")
-    g = src[src.index("def app_get"):src.index("def app_post")]
-    p = src[src.index("def app_post"):]
-    def grab(chunk):
-        r = set(re.findall(r'p == "(/app/[a-z/\-]+)"', chunk))
-        r |= {m + "/{id}" for m in re.findall(r'p\.startswith\("(/app/[a-z]+)/"\)', chunk)}
-        return sorted(r)
-    return grab(g), grab(p)
+    """مسارات /app من جدول `falah/routing.py`، مفصولةً قراءةً وكتابة."""
+    from falah import routing as RT
+    def grab(method):
+        return sorted({r.path + ("{id}" if r.kind == "param" else "")
+                       for r in RT.TABLE[method]})
+    return grab("GET"), grab("POST")
 
 # مَن يجوز له، وما يدخل، وما يخرج، وبماذا يُردّ. مكتوبٌ هنا لأنه لا يُستخرج
 # من الشيفرة — والفحص يتحقّق أن كل مسارٍ قائمٍ له سطر.

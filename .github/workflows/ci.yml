@@ -143,6 +143,9 @@ jobs:
       - name: حدود المستخدم والملفّات — أ ← موردُ ب
         run: python3 isolation_test.py
 
+      - name: طبقة الإذن — can() والجدول وأ ← موردُ ب
+        run: python3 authz_test.py
+
       - name: سلامة القاعدة وبروفة الهجرات
         run: |
           set -euo pipefail

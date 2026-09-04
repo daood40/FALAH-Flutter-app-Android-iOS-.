@@ -1181,9 +1181,14 @@ check("الطابور خلا بعد التنفيذ", JQ.run_once("falah.db",
       os.path.dirname(os.path.abspath(__file__)), ST.APP_DB, "t") is None)
 
 # التصيير خرج من دورة الطلب: لا استدعاءَ ثقيلًا في مسار الخادم
-_src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "app.py")).read()
+# معالِجات الكتابة انتقلت من `app.py` إلى `falah/app_routes.py` في P1.1،
+# فتُقرأ من موضعها الجديد. والشرطُ نفسُه لم يضعف — بل زاد: يُشترط ألّا
+# يُصيَّر داخل الطلب في **أيٍّ** من الملفّين.
+_src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         "falah", "app_routes.py")).read()
+_appsrc0 = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "app.py")).read()
 check("مسار التصدير لم يعد يُصيّر داخل الطلب",
-      "CR.render_plan" not in _src and "VD.build" not in _src)
+      all("CR.render_plan" not in s and "VD.build" not in s for s in (_src, _appsrc0)))
 check("مسارا التصدير والمقطع يضعان في الطابور",
       _src.count("JB.enqueue") == 2 and "202)" in _src)
 check("الحصّة تُحجز عند الوضع لا بعد التصيير",
@@ -1198,13 +1203,17 @@ check("العامل يُعيد الفحص وقت التصيير بفتح الم�
 check("السحب ذرّيّ بقفل كتابةٍ صريح", "BEGIN IMMEDIATE" in _jsrc)
 
 # خادم التطبيق يمرّر كل مسارات القراءة — نقصانُ اسمٍ يعني ٤٠٤ لمسارٍ قائم
-import re as _re, app as _APP
-_apisrc = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "api.py")).read()
-_declared = {m for m in _re.findall(r'p == "(/[a-z/]+)"', _apisrc)}
-_declared |= {m for m in _re.findall(r'p\.startswith\("(/[a-z]+)/"\)', _apisrc)}
+import app as _APP
+from falah import content_routes as _CRT
+# كان هذا يستخرج المساراتِ بتعبيرٍ نمطيّ من نصّ `api.py`. صارت المساراتُ
+# جدولًا مُعلَنًا، فيُقرأ الجدولُ نفسُه — أوثقُ من قراءة نصٍّ، ولا يفوته
+# مسارٌ كُتب بصيغةٍ لم يتوقّعها التعبير.
+_declared = {r.split("/{")[0] for r in _CRT.declared()}
 _missing = sorted(r for r in _declared
                   if not any(r == x or r.startswith(x + "/") for x in _APP.CONTENT_PATHS))
 check("لا مسار قراءةٍ في api.py يغيب عن خادم التطبيق", not _missing, str(_missing))
+check("وجدول المحتوى ليس فارغًا — الفحص أعلاه ليس فحصًا على لا شيء",
+      len(_declared) >= 20, f"{len(_declared)} مسارًا")
 
 _st = JQ.stats(ac)
 check("إحصاء الطابور يعدّ كل الحالات",
@@ -1333,9 +1342,12 @@ def _numbering_ok(rows, ayah, to):
 check("فحص التسلسل يرفض مدًى ناقصَ آية", not _numbering_ok(_rowsX, 1, 3))
 check("ويقبل المدى التامّ", _numbering_ok([{"ayah":1},{"ayah":2},{"ayah":3}], 1, 3))
 check("ويرفض المدى المبعثر", not _numbering_ok([{"ayah":1},{"ayah":3}], 1, 2))
+# بناءُ البطاقة نزل من `api.py` إلى `falah/cards.py` في P1.1 — طبقةُ نطاقٍ
+# لا طبقةُ ويب. والشرطُ نفسُه يُقرأ من موضعه الجديد.
 check("والمصدر نفسه يقارن الطول قبل الأرقام",
       "len(rows) == to - ayah + 1" in open(
-          os.path.join(os.path.dirname(os.path.abspath(__file__)), "api.py")).read())
+          os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                       "falah", "cards.py"), encoding="utf-8").read())
 
 
 
@@ -1424,31 +1436,45 @@ check("وقيم ENUMS تطابق ما يعرفه المحرّك فعلًا",
       PJ.ENUMS["ratio"] == set(RD.SIZES) and PJ.ENUMS["skin"] <= set(RD.SKINS))
 
 # ٣ · حدُّ حجم الجسم
-check("حدُّ الجسم من البيئة", "FALAH_MAX_BODY" in _appsrc)
+_setsrc = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "falah", "settings.py"), encoding="utf-8").read()
+check("حدُّ الجسم من البيئة", "FALAH_MAX_BODY" in _setsrc and "MAX_BODY" in _appsrc)
 check("والجسمُ فوق الحدّ يرفع استثناءً لا يُرمى صامتًا",
       "class BodyTooLarge" in _appsrc and "raise BodyTooLarge" in _appsrc)
 check("ويُردّ ٤١٣ مع إغلاق الاتصال",
       "413" in _appsrc and "close_connection = True" in _appsrc)
 
 # ٤ · حدُّ المعدّل على المكلف
+from falah import ratelimit as _RL, routing as _RT
+_RLsrc = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "falah", "ratelimit.py"), encoding="utf-8").read()
 check("حدُّ المعدّل يشمل التصدير والمقطع والوكيل والتسجيل والتنزيل",
-      set(APP.RATE) == {"export", "video", "agent", "register", "file"}, str(set(APP.RATE)))
+      set(_RL.RATE) == {"export", "video", "agent", "register", "file"}, str(set(_RL.RATE)))
 # يُختبر أثرًا لا نصًّا: الاسم يُبنى في الشيفرة فلا يظهر حرفيًّا فيها
 _oldrate = os.environ.get("FALAH_RATE_EXPORT")
 os.environ["FALAH_RATE_EXPORT"] = "7"
-importlib.reload(APP)
-check("حدُّ المعدّل يُقرأ من البيئة فعلًا", APP.RATE["export"][0] == 7,
-      str(APP.RATE["export"]))
+importlib.reload(_RL)
+check("حدُّ المعدّل يُقرأ من البيئة فعلًا", _RL.RATE["export"][0] == 7,
+      str(_RL.RATE["export"]))
 if _oldrate is None: os.environ.pop("FALAH_RATE_EXPORT", None)
 else: os.environ["FALAH_RATE_EXPORT"] = _oldrate
-importlib.reload(APP)
-check("وافتراضيُّه معقولٌ حين لا تُضبط", APP.RATE["export"][0] >= 10,
-      str(APP.RATE["export"]))
+importlib.reload(_RL)
+check("وافتراضيُّه معقولٌ حين لا تُضبط", _RL.RATE["export"][0] >= 10,
+      str(_RL.RATE["export"]))
+# التصديرُ والمقطع يعدّان بعد القبول (داخل المعالِج)، وما عداهما يُعدّ قبله
+# (في الجدول). الشرطُ نفسُه، مقروءًا من موضعَي التنفيذ الجديدين.
+_arsrc = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "falah", "app_routes.py"), encoding="utf-8").read()
+_rtsrc = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "falah", "routing.py"), encoding="utf-8").read()
 check("والعدُّ عند القبول لا عند الطلب — فلا يُعاقَب تزامنٌ مشروع",
-      _appsrc.count("rate_bump") >= 5 and
-      _appsrc.index('self.rate_bump(c, "export"') > _appsrc.index("JB.enqueue(c, u[\"id\"], \"export\""))
+      _arsrc.index('RL.bump(c, "export"') > _arsrc.index("JB.enqueue(c, u[\"id\"], \"export\"")
+      and _arsrc.index('RL.bump(c, "video"') > _arsrc.index('JB.enqueue(c, u["id"], "video"'))
+check("والمساراتُ ذاتُ الحدّ القبليّ معلَنةٌ في الجدول لا مبثوثةٌ في المعالِجات",
+      {r.rate[0] for rs in _RT.TABLE.values() for r in rs if r.rate}
+      == {"file", "register", "agent"})
 check("ويُردّ ٤٢٩ مع Retry-After لا ٤٠٠",
-      "429" in _appsrc and "Retry-After" in _appsrc)
+      "429" in _rtsrc and "Retry-After" in _RLsrc)
 
 
 # عنوانُ العميل خلف وكيل — الأخيرة لا الأولى

@@ -9,7 +9,7 @@ PY    ?= python3
 PORT  ?= 8080
 APP   ?= http://localhost:$(PORT)
 
-.PHONY: help dev worker lint typecheck security deps contract test audit ui failure leak isolation gate gate-all gate-list \
+.PHONY: help dev worker lint typecheck security deps contract test audit ui failure leak isolation authz gate gate-all gate-list \
         db db-check db-backup db-restore-test migrate-check migrate-guard db-safe-migrate \
         migrate migrate-plan status build docker clean install
 
@@ -103,6 +103,9 @@ leak:  ## فحص تسريب الأخطاء والسجلّ (يشغّل خادمه
 
 isolation:  ## حدود المستخدم والملفّات: أ ← موردُ ب (يشغّل خادمه بنفسه)
 	$(PY) isolation_test.py
+
+authz:  ## طبقة الإذن: can() وحدها، واكتمالُ الجدول، وأ ← موردُ ب حيًّا
+	$(PY) authz_test.py
 
 docker:  ## يبني صورة الحاوية
 	docker build -t falah:local .

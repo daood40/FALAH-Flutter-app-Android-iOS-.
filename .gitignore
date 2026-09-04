@@ -74,3 +74,6 @@ fonts/amiri.zip
 fonts/Amiri-1.002/
 worker.beat
 .gate-logs/
+
+# قياساتُ P1.1 المؤقّتة — الملفّاتُ المحفوظة هي JSON وسجلّا البوّابة
+baseline/t_*

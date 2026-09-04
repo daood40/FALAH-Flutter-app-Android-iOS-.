@@ -374,7 +374,7 @@ def style(answers):
 
 def plan(answers, db=None):
     """الخطة من محرّك الفحص نفسه — فما يراه الوكيل هو ما يُصدَّر لاحقًا."""
-    import api
+    from falah import cards as api
     from falah import verify as V
     db = db or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "falah.db")
     a = sanitize(answers, db)
@@ -411,7 +411,7 @@ def _title(a, db):
     if a.get("source_kind") == "quran" and a.get("surah"):
         s = surah_info(db, a["surah"])
         nm = s["name_ar"] if s["name_ar"].startswith("سُورَة") else "سورة " + s["name_ar"]
-        import api as _api
+        from falah import cards as _api
         lo = a.get("from") or 1; hi = a.get("to") or lo
         return (f"{nm} {_api.arabic_num(lo)}" if str(lo) == str(hi)
                 else f"{nm} {_api.arabic_num(lo)}–{_api.arabic_num(hi)}")
@@ -423,7 +423,7 @@ def _title(a, db):
     return "بطاقة فلاح"
 
 def _caption(title, cards, a):
-    import api as _api
+    from falah import cards as _api
     n = _api.arabic_num(len(cards))
     who = a.get("watermark") or "—"
     ct = dict((v, l) for v, l, _ in CONTENT_TYPES).get(a.get("content_type"), "—")

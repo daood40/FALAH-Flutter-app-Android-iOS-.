@@ -1,12 +1,19 @@
 #!/usr/bin/env python3
-"""خادم تطبيق فلاح — الواجهة والحساب والمشاريع فوق طبقة المحتوى.
+"""خادم تطبيق فلاح — طبقةُ HTTP وحدها.
 
     python3 app.py            # http://localhost:8080
 
 طبقتان في خادمٍ واحد:
   • مسارات المحتوى (/quran/… /hadith/… /card /series …) تُمرَّر كما هي إلى
     `api.py` — لا تُنسخ منطقًا ولا تُعاد كتابته، فمصدر الحكم واحد.
-  • مسارات التطبيق (/app/…) محميّةٌ بجلسةٍ، تكتب في `app.db` وحدها.
+  • مسارات التطبيق (/app/…) تمرّ على جدول `falah/routing.py`: وثيقةٌ ثم
+    إذنٌ ثم معالِج. ولا يقرّر شيءٌ منها هنا.
+
+وما بقي في هذا الملفّ هو HTTP بحتًا: قراءةُ الطلب، والكعكة، والترويسات،
+وترجمةُ أخطاء النطاق إلى رموزِ حالة، وإقلاعُ الخادم. الاختيارُ في
+`falah/routing.py`، والإذنُ في `falah/authz.py`، والعملُ في
+`falah/app_routes.py`. واتّجاهُ الاعتماد ينزل ولا يصعد: لا تعرف طبقةٌ
+تحتُ بشيءٍ ممّا فوقها.
 
 الحماية: الجلسة في كعكة HttpOnly + SameSite=Strict، وكل طلبٍ يغيّر حالةً
 يشترط ترويسة `X-FALAH: 1` — لا يرسلها نموذجٌ من موقعٍ آخر، فيسقط تزوير
@@ -19,44 +26,29 @@ from http.cookies import SimpleCookie
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import api
-from falah import store, auth, projects as P, billing, referrals as REF, jobs as JB
+from falah import store, auth, jobs as JB
+from falah import authz as AZ, routing as RT, settings as CFG
+from falah.web import Request
 
-DB      = os.path.join(HERE, "falah.db")
-UI      = os.path.join(HERE, "falah-app.html")      # مساحة العمل
-DEMO    = os.path.join(HERE, "falah-agent.html")     # النموذج التفاعلي (بلا حساب)
-COOKIE  = "falah_sid"
-SECURE  = os.environ.get("FALAH_SECURE") == "1"      # خلف HTTPS: كعكةٌ لا تسافر إلا مشفّرة
-ORIGIN  = os.environ.get("FALAH_ORIGIN", "").rstrip("/")   # نطاق الإنتاج، إن حُدِّد
-INVITE  = os.environ.get("FALAH_INVITE", "").strip()  # إطلاقٌ مغلق: لا حساب إلا برمز دعوة
-ADMIN_KEY = os.environ.get("FALAH_ADMIN_KEY", "").strip()   # منح الاشتراك وإيصالات المتجر
-# لا تُقرأ X-Forwarded-For إلا بإعلانٍ صريح — انظر `client_ip`
-TRUST_PROXY = os.environ.get("FALAH_TRUST_PROXY") == "1"
-# كل مسارات القراءة في api.py تُمرَّر كما هي. القائمة تُقابل ما في `api.H.do_GET`
-# حرفًا بحرف — نقصانُ اسمٍ هنا يعني ٤٠٤ لمسارٍ موجود، وهو ما كشفه الفحص.
+CFG.refresh()          # إعادةُ تحميل الوحدة تعيد قراءةَ البيئة
+
+DB      = CFG.DB
+UI      = CFG.UI
+DEMO    = CFG.DEMO
+COOKIE  = CFG.COOKIE
+SECURE  = CFG.SECURE
+ORIGIN  = CFG.ORIGIN
+INVITE  = CFG.INVITE
+ADMIN_KEY = CFG.ADMIN_KEY
+TRUST_PROXY = CFG.TRUST_PROXY
+MAX_BODY = CFG.MAX_BODY
+
+# كل مسارات القراءة في api.py تُمرَّر كما هي. القائمة تُقابل ما أعلنه
+# `falah/content_routes.py` — نقصانُ اسمٍ هنا يعني ٤٠٤ لمسارٍ موجود، وهو
+# ما كشفه الفحص، ولذلك يُقارَن الاثنان في `tests.py` آليًّا.
 CONTENT_PATHS = ("/health", "/sources", "/review", "/topics", "/quran", "/hadith",
                  "/enc", "/reciters", "/audio", "/card", "/verify", "/series",
                  "/options", "/chapters", "/chapter", "/templates", "/template")
-
-MAX_BODY = int(os.environ.get("FALAH_MAX_BODY", 1_000_000))
-
-# ═══════════ حدّ المعدّل على المكلف ═══════════
-# كان الحدُّ على الدخول وحده. والتصدير والمقطع أثقلُ منه بكثير — بطاقةٌ
-# ثلاثُ ثوانٍ ومقطعٌ ستٌّ وعشرون — فمن يستطيع بدءَ ألفٍ في الساعة يخنق
-# الخدمة على غيره ولو لم يتجاوز حصّته الشهرية.
-#
-# **وما يُعدّ هو العملُ المقبول لا الطلب.** مئةُ نقرةٍ على الزرّ نفسه تصير
-# مهمّةً واحدة (بفضل مفتاح التفرّد)، فتُحسب واحدة. بهذا يمنع الحدُّ الإساءة
-# ولا يكسر تزامنًا مشروعًا — وهو الفرق بين حدٍّ يحمي وحدٍّ يُزعج.
-def _lim(name, default, window):
-    return (int(os.environ.get(f"FALAH_RATE_{name}", default)), window)
-
-RATE = {
-    "export":   _lim("EXPORT",   30, 3600),    # ثلاثون تصديرًا في الساعة
-    "video":    _lim("VIDEO",    15, 3600),
-    "agent":    _lim("AGENT",   300, 3600),    # سؤالٌ وجوابٌ — أخفّ بكثير
-    "register": _lim("REGISTER", 20, 3600),    # لكل عنوان — والعناوين تُشارَك
-    "file":     _lim("FILE",    600, 3600),
-}
 
 class BodyTooLarge(Exception): pass
 
@@ -167,23 +159,6 @@ class App(BaseHTTPRequestHandler):
             if xff: return xff[-1][:64]
         return self.client_address[0] if self.client_address else "-"
 
-    def rate_ok(self, c, kind, who):
-        """يعيد True إن بقي في الحدّ. ولا يزيد العدّاد — الزيادة عند القبول."""
-        lim, win = RATE[kind]
-        return not auth.throttled(c, f"rate:{kind}:{who}", limit=lim, window=win)
-
-    def rate_bump(self, c, kind, who):
-        auth.bump(c, f"rate:{kind}:{who}", window=RATE[kind][1])
-
-    def too_many(self, kind):
-        lim, win = RATE[kind]
-        mins = win // 60
-        self.send_json({"error": f"تجاوزتَ الحدّ: {lim} في {mins} دقيقة. "
-                                 f"انتظر قليلًا ثم أعد المحاولة.",
-                        "limit": lim, "window_seconds": win}, 429,
-                       extra=[("Retry-After", str(win))])
-        return None
-
     def guard_csrf(self):
         """طبقتان: ترويسةٌ لا يرسلها نموذجٌ من موقعٍ آخر، ومصدرُ الطلب إن حُدِّد النطاق."""
         if self.headers.get("X-FALAH") != "1": return False
@@ -233,7 +208,7 @@ class App(BaseHTTPRequestHandler):
             return self.send_file(os.path.join(HERE, "fonts", name), ct)
         if p == "/healthz":           return self.liveness()
         if p == "/readyz":            return self.readiness()
-        if p.startswith("/app/"):     return self.app_get(p)
+        if p.startswith("/app/"):     return self.app_request("GET", p, {})
         if any(p == x or p.startswith(x + "/") or p.startswith(x + "?") for x in CONTENT_PATHS):
             return self.proxy_content()
         self.send_json({"error": "مسار غير معروف"}, 404)
@@ -252,7 +227,7 @@ class App(BaseHTTPRequestHandler):
             return self.send_json({"error": f"الطلب أكبر من الحدّ ({mb:.1f} م.ب)",
                                    "limit_bytes": MAX_BODY, "got_bytes": int(str(e))}, 413,
                                   extra=[("Connection", "close")])
-        return self.app_post(p, b)
+        return self.app_request("POST", p, b)
 
     # ــــــــــــــــــــ الحياة والجاهزية ــــــــــــــــــــ
     # الفرق ليس تجميلًا: `/healthz` يسأل «أحيَّةٌ العملية؟» فإن سقط أُعيد
@@ -302,268 +277,58 @@ class App(BaseHTTPRequestHandler):
         out["ready"] = ok
         self.send_json(out, 200 if ok else 503)
 
-    # ــ قراءة ــ
+    # ــــــــــــــــــــ مسارات التطبيق ــــــــــــــــــــ
 
-    def app_get(self, p):
+    def subject(self, u):
+        """الفاعلُ كما تراه طبقةُ الإذن. الأدوارُ تُشتقّ هنا لا تُقرأ من طلب.
+
+        اليوم مصدرٌ واحد: المفتاحُ الإداريّ — كما كان `trusted` تمامًا.
+        وفي P1.2 تُقرأ الأدوارُ من القاعدة داخل `authz.roles_for`، ولا
+        يتغيّر هذا السطر ولا أيُّ معالِج.
+        """
+        ok = bool(ADMIN_KEY) and self.headers.get("X-FALAH-ADMIN") == ADMIN_KEY
+        return AZ.subject_for(u["id"] if u else None, admin_key_ok=ok)
+
+    def app_request(self, method, path, body):
+        """دورةُ حياةِ الطلب كاملةً — وموضعُ ترجمةِ الأخطاء الوحيد.
+
+        كانت هذه مكرّرةً مرّتين (`app_get` و`app_post`) بكتلتَي `except`
+        متشابهتين لا متطابقتين. صارت واحدة: ما تعنيه رسالةٌ للمستخدم يُقرَّر
+        هنا، ولا يُترجم خطأٌ في موضعين بطريقتين.
+        """
         c = store.connect()
+        rq = None
         try:
-            if p == "/app/config":
-                return self.send_json({"invite_required": bool(INVITE),
-                                       "origin": ORIGIN or None})
-
-            if p == "/app/plans":
-                return self.send_json(billing.catalogue())
-
-            if p == "/app/me":
-                u = self.user(c)
-                return self.send_json({"user": u} if u else {"user": None}, 200)
-
             u = self.user(c)
-            if not u: return self.send_json({"error": "يلزم تسجيل الدخول"}, 401)
-
-            if p == "/app/entitlements":
-                return self.send_json(billing.entitlements(c, u["id"]))
-
-            if p == "/app/referrals":
-                return self.send_json(REF.summary(c, u["id"]))
-
-            if p == "/app/projects":
-                return self.send_json({"projects": P.listing(c, u["id"])})
-
-            if p.startswith("/app/projects/"):
-                pid = int(p.rsplit("/", 1)[-1])
-                content = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
-                content.row_factory = sqlite3.Row
-                try:    return self.send_json(P.open_project(c, content, u["id"], pid))
-                finally: content.close()
-
-            if p == "/app/file":
-                if not self.rate_ok(c, "file", u["id"]): return self.too_many("file")
-                self.rate_bump(c, "file", u["id"]); c.commit()
-                rel = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("p", [""])[0]
-                return self.send_export_file(c, u, rel)
-
-            if p == "/app/limits":
-                return self.send_json(JB.limits())
-
-            if p == "/app/jobs":
-                return self.send_json({"jobs": JB.listing(c, u["id"]),
-                                       "queue": JB.stats(c), "limits": JB.limits()})
-
-            if p.startswith("/app/jobs/"):
-                # الاستطلاع: المتصفّح يسأل عن مهمّته حتى تنتهي
-                return self.send_json({"job": JB.get(c, u["id"], int(p.rsplit("/", 1)[-1]))})
-
-            if p == "/app/exports":
-                rows = c.execute("""SELECT * FROM exports WHERE user_id=?
-                                    ORDER BY created_at DESC LIMIT 50""", (u["id"],)).fetchall()
-                return self.send_json({"exports": [dict(r) for r in rows]})
-
-            self.send_json({"error": "مسار غير معروف"}, 404)
-        except (P.ProjectError, auth.AuthError, billing.BillingError,
-                REF.ReferralError, JB.JobError) as e:
-            self.send_json({"error": str(e)}, 400)
-        except (ValueError, TypeError) as e:
-            # رقمٌ نصّيّ أو حقلٌ من نوعٍ غير متوقَّع: خطأُ طلبٍ لا عطبُ خادم
-            self.log_error("bad request %s: %r", self.path, e)
-            self.send_json({"error": "قيمةٌ غير صالحة في الطلب"}, 400)
-        except Exception as e:
-            # تفصيل العطب يُسجَّل عندنا ولا يُرسل: نصّ الاستثناء يصف بنيةَ
-            # الشيفرة، وهو نصفُ خريطةٍ لمن يبحث عن ثغرة.
-            self.log_error("internal %s: %s: %s", self.path, type(e).__name__, e)
-            self.send_json({"error": "خطأ داخلي"}, 500)
-        finally:
-            c.close()
-
-    # ــ كتابة ــ
-
-    def app_post(self, p, b):
-        c = store.connect()
-        content = None
-        try:
-            agent = self.headers.get("User-Agent", "")
-
-            if p == "/app/register":
-                ip = self.client_ip()
-                if not self.rate_ok(c, "register", ip): return self.too_many("register")
-                self.rate_bump(c, "register", ip); c.commit()
-                if INVITE and (b.get("invite") or "").strip() != INVITE:
-                    store.log(c, None, "invite_rejected", (b.get("email") or "")[:80]); c.commit()
-                    return self.send_json({"error": "رمز الدعوة غير صحيح"}, 403)
-                uid = auth.register(c, b.get("email"), b.get("password"),
-                                    b.get("name"), b.get("watermark"))
-                ref_note = None
-                if (b.get("ref") or "").strip():
-                    try:    REF.attach(c, uid, b["ref"])
-                    except REF.ReferralError as e: ref_note = str(e)
-                try:    auth.request_verify(c, uid)
-                except Exception: pass
-                tok, u = auth.login(c, b.get("email"), b.get("password"), agent)
-                return self.send_json({"user": u, "referral_note": ref_note,
-                                       "entitlements": billing.entitlements(c, uid)},
-                                      201, self.set_cookie(tok))
-
-            if p == "/app/password/forgot":
-                # الردّ واحدٌ سواءٌ وُجد البريد أو لم يوجد
-                r = auth.request_reset(c, b.get("email"))
-                sent = (r.get("mail") or {}).get("sent")
-                return self.send_json({"ok": True, "mail_sent": bool(sent),
-                                       "note": None if sent else
-                                       "إن كان البريد مسجَّلًا فالرسالة في طريقها"})
-
-            if p == "/app/password/reset":
-                uid = auth.reset_password(c, b.get("token"), b.get("password"))
-                return self.send_json({"ok": True}, 200, self.clear_cookie())
-
-            if p == "/app/verify/confirm":
-                auth.verify_email(c, b.get("token"))
-                return self.send_json({"ok": True})
-
-            if p == "/app/login":
-                tok, u = auth.login(c, b.get("email"), b.get("password"), agent)
-                return self.send_json({"user": u}, 200, self.set_cookie(tok))
-
-            if p == "/app/logout":
-                auth.logout(c, self.token())
-                return self.send_json({"ok": True}, 200, self.clear_cookie())
-
-            u = self.user(c)
-            if not u: return self.send_json({"error": "يلزم تسجيل الدخول"}, 401)
-
-            if p == "/app/account/delete":
-                # يُشترط التصريح بكلمة «حذف» حتى لا يقع الحذف بنقرةٍ عابرة
-                if (b.get("confirm") or "").strip() != "حذف":
-                    return self.send_json({"error": "اكتب «حذف» للتأكيد"}, 400)
-                gone = auth.delete_account(c, u["id"], export_dir=HERE)
-                return self.send_json({"ok": True, **gone}, 200, self.clear_cookie())
-
-            if p == "/app/subscription/cancel":
-                return self.send_json({"subscription": billing.cancel(c, u["id"]),
-                                       "entitlements": billing.entitlements(c, u["id"])})
-
-            if p == "/app/subscription/store-event":
-                # الجهاز يرسل رمز الشراء فقط، والخادم يسأل المتجر عنه ويشتقّ
-                # الحقّ من ردّه — فلا يُمنح شيءٌ بحمولةٍ قادمةٍ من جهاز.
-                trusted = bool(ADMIN_KEY) and self.headers.get("X-FALAH-ADMIN") == ADMIN_KEY
-                try:
-                    sub = billing.apply_store_event(c, u["id"], b.get("provider"),
-                                                    b.get("event") or {}, verified=trusted)
-                except billing.BillingError as e:
-                    return self.send_json({"error": str(e)}, 402)
-                return self.send_json({"subscription": sub,
-                                       "entitlements": billing.entitlements(c, u["id"])})
-
-            if p == "/app/subscription/grant":
-                # منحةٌ إدارية: تجارب، تعويضات، دعوات. لا تُفتح للعامّة.
-                if not ADMIN_KEY or self.headers.get("X-FALAH-ADMIN") != ADMIN_KEY:
-                    return self.send_json({"error": "غير مصرَّح"}, 403)
-                sub = billing.grant(c, int(b.get("user") or u["id"]), b.get("plan"),
-                                    days=int(b.get("days") or 30), provider="grant",
-                                    note=b.get("note"))
-                return self.send_json({"subscription": sub})
-
-            if p == "/app/verify/request":
-                r = auth.request_verify(c, u["id"])
-                return self.send_json({"ok": True, "already": r.get("already", False),
-                                       "mail_sent": bool((r.get("mail") or {}).get("sent"))})
-
-            if p == "/app/profile":
-                auth.update_profile(c, u["id"], b.get("name"), b.get("watermark"))
-                return self.send_json({"user": auth.session_user(c, self.token())})
-
-            if p == "/app/password":
-                auth.change_password(c, u["id"], b.get("old"), b.get("new"))
-                return self.send_json({"ok": True, "note": "أُنهيت كل الجلسات"},
-                                      200, self.clear_cookie())
-
-            if p == "/app/projects/create":
-                billing.check(c, u["id"], "projects")
-                pid = P.create(c, u["id"], b.get("title"), b.get("kind", "series"),
-                               b.get("skin", "parch"), b.get("ratio", "square"),
-                               b.get("watermark") or u["watermark"])
-                return self.send_json({"id": pid}, 201)
-
-            if p == "/app/projects/update":
-                P.update(c, u["id"], int(b["id"]), **{k: b.get(k) for k in
-                         ("title", "kind", "skin", "ratio", "watermark", "note", "archived")})
-                return self.send_json({"ok": True})
-
-            if p == "/app/projects/delete":
-                P.delete(c, u["id"], int(b["id"]))
-                return self.send_json({"ok": True})
-
-            content = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
-            content.row_factory = sqlite3.Row
-
-            if p == "/app/items/add":
-                iid = P.add_item(c, content, u["id"], int(b["project"]),
-                                 b["kind"], b["ref"])
-                return self.send_json({"id": iid}, 201)
-
-            if p == "/app/items/remove":
-                P.remove_item(c, u["id"], int(b["project"]), int(b["id"]))
-                return self.send_json({"ok": True})
-
-            if p == "/app/items/reorder":
-                P.reorder(c, u["id"], int(b["project"]), [int(x) for x in b["order"]])
-                return self.send_json({"ok": True})
-
-            if p == "/app/export":
-                return self.export(c, content, u, int(b["project"]))
-
-            if p == "/app/agent":
-                if not self.rate_ok(c, "agent", u["id"]): return self.too_many("agent")
-                self.rate_bump(c, "agent", u["id"]); c.commit()
-                from falah import agent as AG
-                ans = b.get("answers") or {}
-                ans = AG.sanitize(ans, DB)
-                q = AG.next_question(ans, DB, u["watermark"])
-                prog = AG.progress(ans, DB)
-                if q: return self.send_json({"done": False, "question": q,
-                                             "answers": ans, "progress": prog,
-                                             "preview": AG.plan(ans, DB) if ans.get("source_kind") and
-                                                        AG.selection(ans, DB) else None})
-                try:    return self.send_json({"done": True, "plan": AG.plan(ans, DB),
-                                               "answers": ans, "progress": prog})
-                except SystemExit as e: return self.send_json({"error": str(e)}, 404)
-
-            if p == "/app/agent/build":
-                from falah import agent as AG
-                ans = b.get("answers") or {}
-                if AG.next_question(ans, DB, u["watermark"]):
-                    return self.send_json({"error": "الإجابات غير مكتملة"}, 400)
-                pl  = AG.plan(ans, DB)
-                st  = pl["style"]
-                pid = P.create(c, u["id"], pl["title"], "series",
-                               st["skin"], st["ratio"],
-                               st["watermark"] or u["watermark"])
-                added = 0
-                for card in pl["cards"]:
-                    try:
-                        P.add_item(c, content, u["id"], pid, card["kind"], card["ref"]); added += 1
-                    except P.ProjectError:
-                        pass          # ما لم يجتز الفحص لحظة الإضافة يُترك، ولا يُستبدل
-                store.log(c, u["id"], "agent_project", f"{pid}:{added}")
-                c.commit()
-                return self.send_json({"project": pid, "added": added}, 201)
-
-            if p == "/app/video":
-                return self.video(c, content, u, int(b["project"]), int(b["item"]),
-                                  b.get("reciter", "alafasy"))
-
-            if p == "/app/jobs/cancel":
-                return self.send_json({"job": JB.cancel(c, u["id"], int(b["id"]))})
-
-            if p == "/app/items/accept-drift":
-                P.accept_drift(c, content, u["id"], int(b["project"]), int(b["id"]))
-                return self.send_json({"ok": True})
-
-            self.send_json({"error": "مسار غير معروف"}, 404)
-        except (P.ProjectError, auth.AuthError, billing.BillingError,
-                REF.ReferralError, JB.JobError) as e:
+            rq = Request(path=path, method=method,
+                         query=urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query),
+                         body=body, c=c, root=HERE, content_db=DB,
+                         user=u, subject=self.subject(u),
+                         get_header=self.headers.get,
+                         client_ip=self.client_ip(), session_token=self.token())
+            r = RT.dispatch(rq)
+            if r.file:
+                return self.send_file(r.file[0], r.file[1])
+            extra = list(r.headers)
+            if r.cookie:
+                extra += (self.set_cookie(r.cookie[1], r.cookie[2])
+                          if r.cookie[0] == "set" else self.clear_cookie())
+            self.send_json(r.body, r.code, extra)
+        except AZ.Denied as e:
+            # منعٌ صعد من طبقة النطاق لا من الجدول — يُترجَم بالجدول نفسه
+            d = RT.denial_response(e.decision)
+            self.send_json(d.body, d.code)
+        except RT.DOMAIN_ERRORS as e:
             self.send_json({"error": str(e)}, 400)
         except KeyError as e:
-            self.send_json({"error": "حقل ناقص: " + str(e)}, 400)
+            # الكتابةُ وحدها تقرأ حقولًا من الجسم، فرسالةُ «حقل ناقص» لها.
+            # وفي القراءة يبقى `KeyError` عطبًا داخليًّا كما كان — لا تُوسَّع
+            # رسالةُ خطأ على مسارٍ لم تكن له.
+            if method == "POST":
+                self.send_json({"error": "حقل ناقص: " + str(e)}, 400)
+            else:
+                self.log_error("internal %s: KeyError: %s", self.path, e)
+                self.send_json({"error": "خطأ داخلي"}, 500)
         except (ValueError, TypeError) as e:
             # رقمٌ نصّيّ أو حقلٌ من نوعٍ غير متوقَّع: خطأُ طلبٍ لا عطبُ خادم
             self.log_error("bad request %s: %r", self.path, e)
@@ -574,91 +339,8 @@ class App(BaseHTTPRequestHandler):
             self.log_error("internal %s: %s: %s", self.path, type(e).__name__, e)
             self.send_json({"error": "خطأ داخلي"}, 500)
         finally:
-            if content: content.close()
+            if rq is not None: rq.close()
             c.close()
-
-    # ــــــــــــــــــــ التصدير ــــــــــــــــــــ
-
-    def export(self, c, content, u, pid):
-        """يضع تصديرَ المشروع في الطابور ويردّ فورًا. الشروط تُفحص هنا —
-        قبل الوضع — حتى يعرف المستخدمُ الخطأَ في طلبه لا بعد دقيقة."""
-        st = P.open_project(c, content, u["id"], pid)
-        if not st["items"]:   return self.send_json({"error": "المشروع فارغ"}, 400)
-        if not st["exportable"]:
-            return self.send_json({"error": "فيه عناصر محجوبة أو منحرفة — راجعها أولًا",
-                                   "blocked": st["blocked"], "drift": st["drift"]}, 409)
-        proj = st["project"]
-        n = len(st["items"])
-        # الحصّة تُفحص ثم تُحجز عند الوضع — وإلا أغرق أحدٌ الطابورَ بما يتجاوز
-        # خطّته قبل أن يُصيَّر منه شيء. وتُردّ كاملةً إن فشل العمل.
-        billing.check(c, u["id"], "cards", n)
-        billing.require(c, u["id"], "ratios", proj["ratio"], what="هذا المقاس")
-        billing.require(c, u["id"], "designs", proj["skin"], what="هذا التصميم")
-        # التفرّد يُفحص قبل حجز الحصّة: نقرتان لا تستهلكان بطاقاتٍ مرّتين
-        dup = JB.live_for(c, JB.idem_key(u["id"], "export", {"project": pid}))
-        if dup:
-            return self.send_json({"job": JB.view(dup), "duplicate": True,
-                                   "note": "هذا التصدير في الطابور بالفعل"}, 202)
-        if not self.rate_ok(c, "export", u["id"]): return self.too_many("export")
-        billing.consume(c, u["id"], "cards", n)
-        try:
-            job = JB.enqueue(c, u["id"], "export", {"project": pid}, {"cards": n})
-        except JB.JobConflict as e:
-            # سباقٌ بين الفحص أعلاه والإدراج: طلبان متزامنان بالبصمة نفسها.
-            # الفهرس الفريد حسمه، فيُردّ الثاني بالمهمّة القائمة — لا بخطأ.
-            billing.release(c, u["id"], "cards", n)
-            return self.send_json({**json.loads(str(e)),
-                                   "note": "هذا التصدير في الطابور بالفعل"}, 202)
-        except JB.JobError:
-            billing.release(c, u["id"], "cards", n)     # لم تدخل الطابور فلا تُحاسَب
-            raise
-        self.rate_bump(c, "export", u["id"])      # عند القبول لا عند الطلب
-        store.log(c, u["id"], "export_queued", f"{pid}:{job['id']}"); c.commit()
-        self.send_json({"job": job, "cards": n,
-                        "note": "التصدير في الطابور — تابِع حالته"}, 202)
-
-    def video(self, c, content, u, pid, item_id, reciter):
-        """مقطعٌ من عنصرٍ قرآنيّ في المشروع: البطاقة نفسها + تلاوة قارئٍ مسجَّل.
-        التلاوة رواية، فلا تُركَّب على نصٍّ لم يجتز الفحص، ولا على غير القرآن.
-        يوضع في الطابور — ٢٦ ثانية لا تُنتظر داخل طلب."""
-        st = P.open_project(c, content, u["id"], pid)
-        it = next((x for x in st["items"] if x["id"] == item_id), None)
-        if not it:                 return self.send_json({"error": "العنصر غير موجود"}, 404)
-        if it["kind"] != "quran":  return self.send_json({"error": "المقطع للآيات فقط"}, 400)
-        if it["state"] != "ok":
-            return self.send_json({"error": "العنصر يحتاج مراجعة: " + (it.get("why") or "")}, 409)
-        r = content.execute("SELECT code FROM reciters WHERE code=?", (reciter,)).fetchone()
-        if not r:                  return self.send_json({"error": "القارئ غير مسجَّل"}, 400)
-        billing.check(c, u["id"], "videos")
-        billing.require(c, u["id"], "ratios", st["project"]["ratio"], what="هذا المقاس")
-        pay = {"project": pid, "item": item_id, "reciter": reciter}
-        dup = JB.live_for(c, JB.idem_key(u["id"], "video", pay))
-        if dup:
-            return self.send_json({"job": JB.view(dup), "duplicate": True,
-                                   "note": "هذا المقطع في الطابور بالفعل"}, 202)
-        if not self.rate_ok(c, "video", u["id"]): return self.too_many("video")
-        billing.consume(c, u["id"], "videos")
-        try:
-            job = JB.enqueue(c, u["id"], "video", pay, {"videos": 1})
-        except JB.JobConflict as e:
-            billing.release(c, u["id"], "videos", 1)
-            return self.send_json({**json.loads(str(e)),
-                                   "note": "هذا المقطع في الطابور بالفعل"}, 202)
-        except JB.JobError:
-            billing.release(c, u["id"], "videos", 1)
-            raise
-        self.rate_bump(c, "video", u["id"])
-        store.log(c, u["id"], "video_queued", f"{pid}:{item_id}:{job['id']}"); c.commit()  # noqa
-        self.send_json({"job": job, "note": "المقطع في الطابور — تابِع حالته"}, 202)
-
-    def send_export_file(self, c, u, rel):
-        """لا يُقدَّم إلا ملفٌ داخل مجلّد صاحب الجلسة — لا مسارَ يخرج منه."""
-        root = os.path.realpath(os.path.join(HERE, "exports", str(u["id"])))
-        full = os.path.realpath(os.path.join(HERE, rel))
-        if not full.startswith(root + os.sep) or not os.path.isfile(full):
-            return self.send_json({"error": "ملف غير متاح"}, 404)
-        types = {".png": "image/png", ".mp4": "video/mp4", ".txt": "text/plain; charset=utf-8"}
-        self.send_file(full, types.get(os.path.splitext(full)[1], "application/octet-stream"))
 
 def check_config():
     """يتحقّق من الإعداد قبل الاستقبال. السقوط هنا خيرٌ من إعدادٍ صامتٍ خاطئ.

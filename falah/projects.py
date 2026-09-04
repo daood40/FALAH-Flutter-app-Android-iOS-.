@@ -21,15 +21,19 @@ class ProjectError(Exception):
 # ــــــــــــــــــــ جلب البطاقة من قاعدة المحتوى ــــــــــــــــــــ
 
 def card_for(content, kind, ref):
-    """يبني البطاقة ويفحصها. يعيد (البطاقة، التقرير) أو (None، None)."""
-    import api
+    """يبني البطاقة ويفحصها. يعيد (البطاقة، التقرير) أو (None، None).
+
+    كان هذا يستورد `api` — أي أن طبقةَ النطاق تعتمد على طبقة الويب. صار
+    من `falah/cards.py`، والاتّجاهُ ينزل كما ينبغي. والنداءُ هو هو.
+    """
+    from falah import cards
     if kind == "quran":
-        it, ctx = api.quran_card(content, int(ref["surah"]), int(ref["ayah"]),
-                                 int(ref["to"]) if ref.get("to") else None, True, True)
+        it, ctx = cards.quran_card(content, int(ref["surah"]), int(ref["ayah"]),
+                                   int(ref["to"]) if ref.get("to") else None, True, True)
     elif kind == "enc":
-        it, ctx = api.enc_card(content, int(ref["id"]))
+        it, ctx = cards.enc_card(content, int(ref["id"]))
     elif kind == "hadith":
-        it, ctx = api.hadith_card(content, ref["book"], int(ref["no"]))
+        it, ctx = cards.hadith_card(content, ref["book"], int(ref["no"]))
     else:
         raise ProjectError("نوع غير معروف")
     if not it: return None, None
