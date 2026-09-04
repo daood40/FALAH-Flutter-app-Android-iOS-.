@@ -1341,6 +1341,49 @@ check("والمصدر نفسه يقارن الطول قبل الأرقام",
 
 
 
+
+print("\n▸ تراخيص الخطوط ووثائق P1")
+_fdir = os.path.join(_root, "fonts")
+_shipped = [f for f in os.listdir(_fdir) if f.endswith((".ttf", ".woff2"))]
+check("الخطوط المشحونة معدودة", len(_shipped) >= 9, str(len(_shipped)))
+# كلُّ عائلةِ خطٍّ مشحونة لها نصُّ ترخيصها
+_fams = set()
+for _f in _shipped:
+    _fams.add("plex" if "plex" in _f.lower() else "amiri")
+_lic = {f.lower() for f in os.listdir(_fdir) if f.startswith("OFL-")}
+for _fam in _fams:
+    check(f"نصُّ ترخيصٍ مشحونٌ لعائلة {_fam}",
+          any(_fam in x for x in _lic), str(sorted(_lic)))
+for _l in _lic:
+    _t = open(os.path.join(_fdir, [x for x in os.listdir(_fdir)
+                                   if x.lower() == _l][0]), encoding="utf-8").read()
+    check(f"{_l}: نصُّ OFL 1.1 كامل",
+          "SIL OFL" in _t or "Open Font License" in _t)
+    check(f"{_l}: وفيه إشعار حقّ النشر", "Copyright" in _t)
+_licmd = open(os.path.join(_root, "launch", "LICENSES.md"), encoding="utf-8").read()
+check("ووثيقةُ التراخيص تحسم أمر الخطوط",
+      "IBM Plex" in _licmd and "OFL 1.1" in _licmd and "OFL-IBMPlex.txt" in _licmd)
+
+# وثائق P1 — موجودةٌ وكاملةُ الحقول
+_arch = open(os.path.join(_root, "P1_ARCHITECTURE.md"), encoding="utf-8").read()
+_plan = open(os.path.join(_root, "P1_MASTER_PLAN.md"), encoding="utf-8").read()
+_back = open(os.path.join(_root, "P1_BACKLOG.md"), encoding="utf-8").read()
+check("وثيقةُ المعمارية فيها القرار الثلاثيّ",
+      all(x in _arch for x in ("ما لا يُمَسّ", "ما يُحسَّن", "ما لا يُعاد كتابته")))
+check("وفيها عقدُ الأمان مربوطًا بحرّاسه", "SECURITY CONTRACT" in _arch)
+check("وتذكر الخطَّ الأساس المقيس", "٩٢٩" in _arch and "٩٢٩" in _plan)
+for _f in ("Goal", "Requirements", "Security impact", "Tests",
+           "Acceptance criteria", "Rollback plan", "Database changes", "API changes"):
+    check(f"الخطّة تحمل حقل {_f}", _f in _plan)
+check("والمراحل مرقَّمةٌ ومرتَّبةٌ بتبعيّاتها",
+      all(f"P1.{i}" in _plan for i in range(1, 9)))
+check("وRELEASE BLOCKERS ظاهرةٌ في الخطّة لا مخفيّة",
+      "RELEASE BLOCKERS" in _plan and "docker build" in _plan)
+check("ودفترُ المؤجَّل يمنع توسّع النطاق",
+      "لا يُنفَّذ بندٌ من هنا" in _back and "B1" in _back)
+_p0 = open(os.path.join(_root, "P0_RELEASE_STATUS.md"), encoding="utf-8").read()
+check("وحالةُ P0 ما زالت تعلن ما هو BLOCKED", "BLOCKED" in _p0)
+
 print("\n▸ مراجعة الإنتاج الساكنة — انحدارات")
 
 # ١ · حقنُ CSS عبر لون الحبر (كان يخرج من <style> إلى <script>)
