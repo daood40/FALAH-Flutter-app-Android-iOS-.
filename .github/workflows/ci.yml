@@ -53,6 +53,9 @@ jobs:
       - name: عقد الـAPI مطابقٌ للشيفرة
         run: python3 api_contract.py --check
 
+      - name: كتالوج الصلاحيات محدَّث
+        run: python3 perms_report.py --check
+
       - name: لا ملفّ ضخمٍ ولا سرٌّ في المستودع
         run: |
           set -euo pipefail
@@ -148,6 +151,9 @@ jobs:
 
       - name: الأدوار والصلاحيات وسجلّ التدقيق
         run: python3 rbac_test.py
+
+      - name: الثوابت الأمنية المسمّاة
+        run: python3 invariants.py
 
       - name: سلامة القاعدة وبروفة الهجرات
         run: |

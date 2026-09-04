@@ -44,6 +44,68 @@ def req(base, path, body=None, cookie=None, hdr=None, timeout=25, raw=False):
     except Exception as e:
         return 0, {"error": type(e).__name__}, []
 
+
+def oversized(base, nbytes, chunk=65536, read_between=True):
+    """يرسل جسمًا فوق الحدّ **بمقبسٍ خام** ويفصل طبقتين لا يخلطهما:
+
+      • **دلالةُ HTTP**: هل أرسل الخادمُ ٤٠٣؟ ٤١٣؟ بأيّ جسم؟
+      • **سلوكُ النقل**: هل أُتمّ إرسالُ الجسم؟ هل وقع خطأُ كتابة؟
+        هل أُغلق الاتصال؟
+
+    ولماذا مقبسٌ خام لا `urllib`؟ لأن `urllib` يخلط الطبقتين: يعامل خطأَ
+    الكتابة **خطأً نهائيًّا** فلا يقرأ الردَّ الذي وصل فعلًا إلى مخزنه.
+    فيقول «تعذّر الاتصال» عن خادمٍ ردَّ ٤١٣ كما ينبغي. وهذا فرقٌ بين
+    «الخادمُ مخطئ» و«هذا العميلُ لا يقرأ» — ولا يجوز الخلط بينهما.
+    """
+    body = json.dumps({"project": 1, "junk": "x" * nbytes}).encode()
+    host, port = urllib.parse.urlparse(base).hostname, urllib.parse.urlparse(base).port
+    s_ = socket.create_connection((host, port), timeout=15)
+    s_.sendall(b"POST /app/export HTTP/1.1\r\nHost: " + host.encode()
+               + b"\r\nContent-Type: application/json\r\nX-FALAH: 1\r\n"
+               + f"Content-Length: {len(body)}\r\n".encode() + b"\r\n")
+    sent, resp, werr = 0, b"", None
+    s_.settimeout(0.4)
+    while sent < len(body):
+        try:
+            sent += s_.send(body[sent:sent + chunk])
+        except OSError as e:
+            werr = type(e).__name__; break
+        if not read_between: continue
+        try:
+            d = s_.recv(65536)
+            if not d: break
+            resp += d
+            if b"\r\n\r\n" in resp: break
+        except socket.timeout: pass
+        except OSError as e: werr = werr or type(e).__name__; break
+    # تُقرأ الترويساتُ ثم **الجسمُ بطوله المعلَن**. الاكتفاءُ بـ`\r\n\r\n`
+    # يجعل البندَ متقطّعًا: الترويساتُ قد تصل في حزمةٍ والجسمُ في التالية.
+    s_.settimeout(4)
+    closed = False
+    try:
+        while b"\r\n\r\n" not in resp:
+            d = s_.recv(65536)
+            if not d: closed = True; break
+            resp += d
+        h = resp.split(b"\r\n\r\n", 1)[0].decode("latin1")
+        want = next((int(x.split(":", 1)[1]) for x in h.splitlines()
+                     if x.lower().startswith("content-length")), 0)
+        while len(resp.split(b"\r\n\r\n", 1)[1]) < want:
+            d = s_.recv(65536)
+            if not d: closed = True; break
+            resp += d
+    except OSError as e:
+        werr = werr or type(e).__name__
+    except (IndexError, StopIteration, ValueError):
+        pass
+    head, _, rest = resp.partition(b"\r\n\r\n")
+    try:    payload = json.loads(rest.decode("utf-8"))
+    except Exception: payload = None
+    s_.close()
+    return {"sent": sent, "total": len(body), "write_error": werr, "closed": closed,
+            "status": int(head.split()[1]) if head.split()[1:] else 0,
+            "head": head.decode("latin1"), "body": payload}
+
 def free_port():
     s = socket.socket(); s.bind(("", 0)); p = s.getsockname()[1]; s.close(); return p
 
@@ -212,11 +274,46 @@ def main():
         check("عنوانٌ فاحشُ الطول يُرفض أو يُقصّ", st >= 400 or
               len(req(base, f"/app/projects/{dd.get('id')}", cookie=A)[1]
                   ["project"]["title"]) <= 120, str(st))
-        st, dd, _ = req(base, "/app/export", {"project": 1, "junk": "x" * 1_100_000}, A)
+        # ═══ B23 · حدُّ الجسم: دلالةُ HTTP مفصولةٌ عن سلوك النقل ═══
+        # كان هذا البند يُقاس بـ`urllib` فيسقط متقطّعًا. والسقوطُ لم يكن في
+        # الخادم بل في القياس: `urllib` يعامل خطأَ الكتابة خطأً نهائيًّا فلا
+        # يقرأ ردًّا وصل فعلًا. فصُلت الطبقتان ولم يُخفَّف شيء — بل صار
+        # المقيسُ أدقَّ وأشدَّ.
+
+        # ① دلالةُ HTTP — هل الخادمُ يفي بالعقد؟
+        r = oversized(base, 1_100_000)
         check("جسمٌ فوق الحدّ يُردّ ٤١٣ لا صمتًا ولا «حقل ناقص»",
-              st == 413 and "أكبر من الحدّ" in str(dd), f"{st} {str(dd)[:60]}")
+              r["status"] == 413 and "أكبر من الحدّ" in str(r["body"]),
+              f"{r['status']} {str(r['body'])[:60]}")
         check("والرسالة تقول الحدَّ وما وصل",
-              isinstance(dd, dict) and "limit_bytes" in dd and "got_bytes" in dd)
+              isinstance(r["body"], dict)
+              and "limit_bytes" in r["body"] and "got_bytes" in r["body"])
+        check("والردُّ يُعلن إغلاقَ الاتصال — فلا تُقرأ البقيّةُ طلبًا تاليًا",
+              "Connection: close" in r["head"], r["head"].splitlines()[-1][:50])
+        for label, n, chunk in (("فوق الحدّ ببايتاتٍ قليلة", 1_000_100, 65536),
+                                ("فوق الحدّ بعشرة أضعاف", 10_000_000, 65536),
+                                ("بدفعاتٍ صغيرة (٤ ك.ب)", 1_100_000, 4096)):
+            rr = oversized(base, n, chunk)
+            check(f"و٤١٣ ثابتةٌ مهما كان الحجمُ والدفعة: {label}",
+                  rr["status"] == 413, str(rr["status"]))
+
+        # ② سلوكُ النقل — الحدُّ المعروف، مُثبَتٌ لا مسكوتٌ عنه
+        check("**والخادمُ لا يستنزف الجسمَ المرفوض** — يردّ بعد الترويسات ويغلق",
+              r["sent"] < r["total"],
+              f"أُرسل {r['sent']:,} من {r['total']:,} قبل وصول الردّ")
+        # عميلٌ يعتبر خطأَ الكتابة نهائيًّا (كـurllib) قد يفوته الردُّ الواصل.
+        # يُقاس ولا يُدَّعى: عشرون محاولةً تُصنَّف. والثابتُ المطلوب أن الخطأ
+        # إمّا ٤١٣ صحيحةٌ وإمّا خطأُ نقل — **ولا رمزَ حالةٍ خاطئ أبدًا**.
+        seen = {}
+        for _ in range(20):
+            st2, dd2, _ = req(base, "/app/export",
+                              {"project": 1, "junk": "x" * 1_100_000}, A)
+            seen[st2] = seen.get(st2, 0) + 1
+        check("وعميلٌ لا يقرأ عند خطأ الكتابة يرى إمّا ٤١٣ وإمّا قطعَ نقل — "
+              "ولا رمزَ حالةٍ خاطئًا أبدًا",
+              set(seen) <= {413, 0}, str(seen))
+        check("ويرى ٤١٣ في بعضها على الأقلّ — فالردُّ يُرسَل فعلًا",
+              seen.get(413, 0) >= 1, f"٤١٣ في {seen.get(413,0)} من ٢٠")
         # جسمٌ هائل: العميل قد ينكسر أنبوبه، والمهمّ أن يبقى الخادم حيًّا
         req(base, "/app/export", {"project": 1, "junk": "x" * 6_000_000}, A)
         check("والخادم يبقى حيًّا بعد جسمٍ هائل",

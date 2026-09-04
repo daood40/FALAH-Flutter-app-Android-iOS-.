@@ -9,7 +9,7 @@ PY    ?= python3
 PORT  ?= 8080
 APP   ?= http://localhost:$(PORT)
 
-.PHONY: help dev worker lint typecheck security deps contract test audit ui failure leak isolation authz rbac gate gate-all gate-list \
+.PHONY: help dev worker lint typecheck security deps contract test audit ui failure leak isolation authz rbac invariants perms gate gate-all gate-list \
         db db-check db-backup db-restore-test migrate-check migrate-guard db-safe-migrate \
         migrate migrate-plan status build docker clean install
 
@@ -109,6 +109,12 @@ authz:  ## طبقة الإذن: can() وحدها، واكتمالُ الجدول
 
 rbac:  ## الأدوار والصلاحيات وسجلّ التدقيق — مصفوفةٌ وتصعيدٌ وحقنُ أعطال
 	$(PY) rbac_test.py
+
+invariants:  ## الثوابت الأمنية المسمّاة — دائمةٌ لا تُخفَّف
+	$(PY) invariants.py
+
+perms:  ## يولّد docs/PERMISSIONS.md من الشيفرة
+	$(PY) perms_report.py
 
 roles:  ## يعرض الأدوار في القاعدة وصلاحياتِ كلٍّ منها
 	$(PY) -m falah.roles list

@@ -22,7 +22,7 @@
 
   ٦. **fail closed** — إذا لم نعرف الصلاحية فالجواب `DENY` لا `ALLOW`.
 """
-import json, os, socket, sqlite3, subprocess, sys, tempfile, threading, time
+import hashlib, json, os, socket, sqlite3, subprocess, sys, tempfile, threading, time
 import urllib.error, urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -31,8 +31,13 @@ from falah import audit as AUD, authz as AZ
 
 OK = FAIL = 0; FAILURES = []
 PW = "Str0ng-Pass!x9"
-# قناصةٌ تُحقن في مسارات الأسرار ثم يُفتَّش الجدولُ كلُّه عنها
-SECRET = "S3CR3T-canary-do-not-log-9f2a1c"  # noqa: S105
+# قنّاصةٌ تُحقن في مسارات الأسرار ثم يُفتَّش الجدولُ كلُّه عنها.
+#
+# **تُشتقّ ولا تُكتب حرفيًّا**: قيمةٌ عالية العشوائية مُسنَدةٌ إلى اسمٍ
+# يشبه السرّ يلتقطها `security_scan.py` — وقد التقطها فعلًا وأسقط
+# البوّابة. والصوابُ ألّا يُضعَّف الفاحص، بل ألّا يُكتب في الشيفرة ما
+# يشبه سرًّا أصلًا. والقيمةُ ثابتةٌ بين التشغيلات فيبقى الفحصُ حاسمًا.
+CANARY = "canary-" + hashlib.sha256(b"falah-rbac-canary").hexdigest()[:20]
 
 def check(n, c, d=""):
     global OK, FAIL
@@ -191,16 +196,16 @@ def audit_unit():
     check("ونتيجةٌ خارج المعدود كذلك",
           _raises(lambda: AUD.record(None, "logout", result="maybe"), ValueError))
 
-    dirty = {"password": SECRET, "pw": SECRET, "token": SECRET,
-             "session_token": SECRET, "api_key": SECRET, "cookie": SECRET,
-             "Authorization": SECRET, "pw_salt": SECRET, "receipt": SECRET,
-             "payload": SECRET, "private_key": SECRET, "signature": SECRET,
+    dirty = {"password": CANARY, "pw": CANARY, "token": CANARY,
+             "session_token": CANARY, "api_key": CANARY, "cookie": CANARY,
+             "Authorization": CANARY, "pw_salt": CANARY, "receipt": CANARY,
+             "payload": CANARY, "private_key": CANARY, "signature": CANARY,
              "plan": "studio", "count": 3, "ok": True,
              "opaque": "AAAAAAAAAAAAAAAAAAAAAAAAAAAA",   # يشبه رمزًا
-             "nested": {"password": SECRET}, "arr": [SECRET]}
+             "nested": {"password": CANARY}, "arr": [CANARY]}
     clean = AUD.scrub(dirty)
     blob = json.dumps(clean, ensure_ascii=False)
-    check("المصفاة تُسقط كلَّ ما يشبه سرًّا بالاسم", SECRET not in blob, blob[:120])
+    check("المصفاة تُسقط كلَّ ما يشبه سرًّا بالاسم", CANARY not in blob, blob[:120])
     check("وتُسقط ما يشبه رمزًا بالشكل ولو كان مفتاحُه بريئًا",
           "opaque" not in clean)
     check("ولا تُبقي عمقًا ولا حمولةً خام",
@@ -216,6 +221,151 @@ def _raises(fn, exc):
     except exc: return True
     except Exception: return False
     return False
+
+
+# ═══════════════ أمرُ الإقلاع المحلّيّ ═══════════════
+
+def bootstrap():
+    """`python3 -m falah.roles` — بديلُ المفتاح المشترك.
+
+    يُختبر بتشغيلٍ حقيقيّ لا باستدعاءِ دالّة: الوسائطُ والرموزُ الراجعة
+    والمخرَجُ كلُّها جزءٌ من عقده مع المشغّل.
+    """
+    head("أمرُ الإقلاع — حرّاسُه")
+    d = tempfile.mkdtemp(prefix="falah-cli-")
+    db = os.path.join(d, "app.db")
+    env = dict(os.environ, FALAH_APP_DB=db)
+
+    def cli(*args, timeout=60):
+        r = subprocess.run([sys.executable, "-m", "falah.roles", *args],
+                           cwd=HERE, env=env, capture_output=True, text=True,
+                           timeout=timeout)
+        return r.returncode, (r.stdout + r.stderr)
+
+    # حسابان بلا شبكة
+    sys.path.insert(0, HERE)
+    import importlib
+    from falah import store as _ST
+    old_db = os.environ.get("FALAH_APP_DB")
+    os.environ["FALAH_APP_DB"] = db
+    importlib.reload(_ST)
+    from falah import auth as _AU
+    cc = _ST.init()
+    uid_a = _AU.register(cc, "boot-a@t.test", PW, "a", None)
+    _AU.register(cc, "boot-b@t.test", PW, "b", None)
+    tok = _AU.new_session(cc, uid_a)
+    cc.close()
+    if old_db is None: os.environ.pop("FALAH_APP_DB", None)
+    else: os.environ["FALAH_APP_DB"] = old_db
+    importlib.reload(_ST)
+
+    def role_of(mail):
+        c2 = sqlite3.connect(db)
+        r = c2.execute("SELECT role FROM users WHERE email=?", (mail,)).fetchone()
+        c2.close(); return r[0] if r else None
+
+    def audit_rows():
+        c2 = sqlite3.connect(db)
+        n = c2.execute("SELECT COUNT(*) FROM audit_logs WHERE action='role.changed'"
+                       ).fetchone()[0]
+        c2.close(); return n
+
+    rc, out = cli("grant", "boot-a@t.test", "super_admin", "--reason", "bootstrap")
+    check("يمنح الدورَ الأعلى", rc == 0 and role_of("boot-a@t.test") == "super_admin",
+          f"rc={rc} {out.strip()[:60]}")
+    n1 = audit_rows()
+    check("ويكتب حدثَ تدقيقٍ واحدًا", n1 == 1, str(n1))
+
+    rc, out = cli("grant", "boot-a@t.test", "super_admin", "--reason", "مرّةً أخرى")
+    check("**idempotent**: المنحةُ نفسُها ثانيةً لا تغيّر شيئًا",
+          rc == 0 and role_of("boot-a@t.test") == "super_admin", f"rc={rc}")
+    check("ولا تكتب حدثًا ثانيًا — السجلُّ يحكي ما جرى لا ما طُلب",
+          audit_rows() == n1, f"{n1} → {audit_rows()}")
+
+    rc, out = cli("grant", "ghost@t.test", "admin")
+    check("يرفض حسابًا لا وجود له برمزٍ غير صفر",
+          rc != 0 and "لا حساب" in out, f"rc={rc} {out.strip()[:50]}")
+
+    rc, out = cli("grant", "boot-b@t.test", "root")
+    check("ويرفض دورًا غير معروفٍ قبل أن يمسّ القاعدة",
+          rc != 0 and role_of("boot-b@t.test") == "user", f"rc={rc}")
+
+    rc, out = cli("grant", "", "admin")
+    check("ويرفض بريدًا فارغًا", rc != 0, f"rc={rc}")
+
+    rc, out = cli("grant", "  BOOT-B@T.TEST  ", "moderator")
+    check("ويطبّع البريد فلا يُنشئ التباسًا بفراغٍ أو حالةِ حرف",
+          rc == 0 and role_of("boot-b@t.test") == "moderator", f"rc={rc}")
+
+    # ــ لا سرَّ في الوسائط ولا في المخرَج ــ
+    src = open(os.path.join(HERE, "falah", "roles.py"), encoding="utf-8").read()
+    parser_args = [x for x in ("password", "--password", "token", "--token",
+                               "secret", "--secret", "--key") if f'"{x}"' in src]
+    check("لا وسيطَ لكلمةِ مرورٍ ولا رمز — فلا يظهر سرٌّ في `ps`",
+          not parser_args, str(parser_args))
+    rc, out = cli("show", "boot-a@t.test")
+    leaked = [w for w in ("pw_hash", "pw_salt", "token_hash", "BLOB", tok)
+              if w in out]
+    check("ولا يطبع اشتقاقًا ولا ملحًا ولا رمزَ جلسة", not leaked, str(leaked))
+    rc, out = cli("list")
+    check("و`list` كذلك", rc == 0 and not any(w in out for w in ("hash", "salt")))
+
+    # ــ حالةُ الهجرات ــ
+    c2 = sqlite3.connect(db)
+    c2.execute("DELETE FROM schema_migrations WHERE version=4"); c2.commit(); c2.close()
+    rc, out = cli("grant", "boot-b@t.test", "admin")
+    # `store.init()` يطبّق الآمنةَ فيسدّ الفرق — فالحارسُ يمرّ، وهذا صحيح.
+    check("هجرةٌ آمنةٌ ناقصة تُطبَّق قبل العمل لا تُتخطّى",
+          rc == 0 and role_of("boot-b@t.test") == "admin", f"rc={rc} {out[:60]}")
+    c2 = sqlite3.connect(db)
+    left = c2.execute("SELECT COUNT(*) FROM schema_migrations WHERE version=4"
+                      ).fetchone()[0]
+    c2.close()
+    check("وسجلُّ الهجرات يعود كاملًا", left == 1, str(left))
+
+    # ــ التزامن ــ
+    cli("grant", "boot-b@t.test", "user")
+    res = []
+    def race(role):
+        res.append(cli("grant", "boot-b@t.test", role, timeout=90)[0])
+    ts = [threading.Thread(target=race, args=("moderator",)) for _ in range(8)]
+    for t in ts: t.start()
+    for t in ts: t.join()
+    check("ثمانيةُ تشغيلاتٍ متزامنةٍ بالدور نفسه — كلُّها تنجح بلا تعارض",
+          set(res) == {0}, str(sorted(set(res))))
+    check("والنتيجةُ دورٌ واحدٌ صحيح", role_of("boot-b@t.test") == "moderator")
+    c2 = sqlite3.connect(db)
+    n = c2.execute("""SELECT COUNT(*) FROM audit_logs WHERE action='role.changed'
+                      AND resource_id=(SELECT id FROM users WHERE email='boot-b@t.test')
+                      AND metadata LIKE '%"to": "moderator"%'""").fetchone()[0]
+    ok_int = c2.execute("PRAGMA integrity_check").fetchone()[0]
+    c2.close()
+    check("ولا تُكتب ثمانيةُ أحداثٍ لتغييرٍ واحد", n <= 3, f"{n} حدثًا")
+    check("والقاعدةُ سليمةٌ بعد التزامن", ok_int == "ok", ok_int)
+
+    # ــ الفاعلُ معروف ــ
+    c2 = sqlite3.connect(db)
+    meta = json.loads(c2.execute(
+        "SELECT metadata FROM audit_logs WHERE action='role.changed' LIMIT 1"
+    ).fetchone()[0])
+    role_col = c2.execute(
+        "SELECT actor_role FROM audit_logs WHERE action='role.changed' LIMIT 1"
+    ).fetchone()[0]
+    c2.close()
+    check("وكلُّ حدثٍ يقول مَن فعل: مستخدمُ النظام والمضيف والطريق",
+          role_col == "system:cli" and meta.get("os_user") and meta.get("host")
+          and meta.get("via") == "cli", str(meta)[:90])
+    check("ويحمل الدورَ من وإلى والسبب",
+          meta.get("from") and meta.get("to") and "reason" in meta)
+
+    # ــ لا يعمل عبر HTTP ــ
+    routes = open(os.path.join(HERE, "falah", "routing.py"), encoding="utf-8").read()
+    handlers = open(os.path.join(HERE, "falah", "app_routes.py"), encoding="utf-8").read()
+    check("**ولا مسارَ ينادي أمرَ الإقلاع** — لا يعمل عبر الشبكة بحال",
+          "falah.roles" not in routes and "roles" not in
+          [x.strip() for x in handlers.split("import")[1].split(",")]
+          and "from falah import roles" not in handlers
+          and "import roles" not in handlers)
 
 # ═══════════════ حيًّا ═══════════════
 
@@ -474,15 +624,15 @@ def live():
               cc.execute("SELECT COUNT(*) FROM audit_logs").fetchone()[0] == n0)
 
         head("لا سرَّ في السجلّ — يُفتَّش بسرٍّ معروف")
-        req(base, "/app/login", {"email": m1, "password": SECRET})
-        req(base, "/app/register", {"email": "x@y.test", "password": SECRET,
-                                    "name": SECRET})
+        req(base, "/app/login", {"email": m1, "password": CANARY})
+        req(base, "/app/register", {"email": "x@y.test", "password": CANARY,
+                                    "name": CANARY})
         req(base, "/app/subscription/store-event",
-            {"provider": "apple", "event": {"receipt": SECRET, "token": SECRET}}, U1)
+            {"provider": "apple", "event": {"receipt": CANARY, "token": CANARY}}, U1)
         blob = "".join(str(r) for r in
                        cc.execute("SELECT * FROM audit_logs").fetchall())
         check("لا أثرَ للسرّ في أيّ عمودٍ من الجدول كلِّه",
-              SECRET not in blob, "وُجد!" if SECRET in blob else "")
+              CANARY not in blob, "وُجد!" if CANARY in blob else "")
         cookies = [r[0] for r in cc.execute(
             "SELECT COALESCE(metadata,'') FROM audit_logs")]
         check("ولا كعكةَ ولا ترويسةَ وثيقة",
@@ -549,7 +699,7 @@ if __name__ == "__main__":
     print("═" * 52)
     print("  الأدوارُ والصلاحياتُ وسجلُّ التدقيق")
     print("═" * 52)
-    matrix(); guards(); audit_unit(); live()
+    matrix(); guards(); audit_unit(); bootstrap(); live()
     print("\n" + "─" * 52)
     if FAIL:
         print(f"النتيجة: سقط {FAIL} من {OK + FAIL}")

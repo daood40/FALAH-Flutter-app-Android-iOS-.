@@ -1623,6 +1623,7 @@ check("و«الإنتاج» يُعلَن ولا يُخمَّن", 'FALAH_ENV' in 
 
 print("\n▸ الهجرة ٠٠٥ — الأدوار وسجلّ التدقيق")
 from falah import migrate as MG
+from falah import authz as AZ_T
 _msrc = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
                           "falah", "migrate.py"), encoding="utf-8").read()
 # الدرسُ الذي علّمته الهجرةُ ٠٠٤ يُختبر هنا صراحةً: قاعدةٌ **جديدة** وقاعدةٌ
@@ -1668,6 +1669,58 @@ check("وسجلُّ التدقيق ومُشغِّلاه موجودان في ال
       {("table", "audit_logs"), ("trigger", "audit_logs_no_update"),
        ("trigger", "audit_logs_no_delete")} <= _mig[0] <= _mig[0] | _fresh[0]
       and {("trigger", "audit_logs_no_delete")} <= _fresh[0])
+# ── تحقّقٌ موسَّع: قاعدةٌ قائمةٌ فيها بياناتٌ حقيقية ──
+# لا يكفي أن يتقارب المخطَّط: يجب ألّا يبقى صفٌّ بدورٍ فارغٍ أو مجهولٍ أو
+# إداريّ. وأخطرُ ما يمكن أن يقع في هجرةِ أدوارٍ هو ترقيةٌ عرَضية.
+def _migrated_with_data(n=25):
+    d = _tf.mkdtemp(); dbp = os.path.join(d, "x.db")
+    cc0 = sqlite3.connect(dbp)
+    cc0.executescript("""CREATE TABLE users(id INTEGER PRIMARY KEY,
+      email TEXT UNIQUE NOT NULL, name TEXT, watermark TEXT,
+      pw_hash BLOB NOT NULL, pw_salt BLOB NOT NULL, pw_iter INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active', verified_at INTEGER,
+      created_at INTEGER NOT NULL, last_login INTEGER);""")
+    for i in range(n):
+        cc0.execute("INSERT INTO users(email,pw_hash,pw_salt,pw_iter,created_at,status)"
+                    " VALUES(?,x'00',x'00',1,1,?)",
+                    (f"old{i}@x.test", "suspended" if i % 7 == 0 else "active"))
+    cc0.commit(); cc0.close()
+    old_env = os.environ.get("FALAH_APP_DB")
+    os.environ["FALAH_APP_DB"] = dbp
+    importlib.reload(ST)
+    cc0 = ST.init()
+    stats = {
+        "total":   cc0.execute("SELECT COUNT(*) FROM users").fetchone()[0],
+        "null":    cc0.execute("SELECT COUNT(*) FROM users WHERE role IS NULL").fetchone()[0],
+        "blank":   cc0.execute("SELECT COUNT(*) FROM users WHERE TRIM(role)=''").fetchone()[0],
+        "roles":   {r[0] for r in cc0.execute("SELECT DISTINCT role FROM users")},
+        "admins":  cc0.execute("SELECT COUNT(*) FROM users WHERE role IN"
+                               " ('admin','super_admin','moderator')").fetchone()[0],
+        "status":  cc0.execute("SELECT COUNT(*) FROM users WHERE status='suspended'"
+                               ).fetchone()[0],
+        "notnull": cc0.execute("SELECT \"notnull\" FROM pragma_table_info('users')"
+                               " WHERE name='role'").fetchone()[0],
+    }
+    cc0.close()
+    if old_env is None: os.environ.pop("FALAH_APP_DB", None)
+    else: os.environ["FALAH_APP_DB"] = old_env
+    importlib.reload(ST)
+    return stats
+
+_ms = _migrated_with_data()
+check("قاعدةٌ فيها ٢٥ حسابًا قائمًا تُهاجَر بلا فقدِ صفّ",
+      _ms["total"] == 25, str(_ms["total"]))
+check("ولا صفَّ بدورٍ NULL", _ms["null"] == 0, str(_ms["null"]))
+check("ولا بدورٍ فارغ", _ms["blank"] == 0, str(_ms["blank"]))
+check("ولا دورَ خارج ما تعرفه الشيفرة",
+      _ms["roles"] <= set(AZ_T.ASSIGNABLE), str(_ms["roles"]))
+check("**ولا حسابَ صار مشرفًا ولا إداريًّا ولا أعلى**",
+      _ms["admins"] == 0, f"{_ms['admins']} حسابًا")
+check("والكلُّ على أقلِّ الأدوار", _ms["roles"] == {"user"}, str(_ms["roles"]))
+check("والعمودُ NOT NULL فلا يُكتب فيه فراغٌ لاحقًا", _ms["notnull"] == 1)
+check("وحالةُ الحسابات لم تُمَسّ — الموقوفُ يبقى موقوفًا",
+      _ms["status"] == 4, str(_ms["status"]))
+
 check("والهجرة ٠٠٥ مصنَّفةٌ آمنة — إضافةٌ محضة بلا DROP ولا نقلِ بيانات",
       any(v == 5 and not destructive for v, _n, destructive, _f in MG.MIGRATIONS)
       and "DROP TABLE" not in (MG.m005_roles_and_audit.__doc__ or "")
