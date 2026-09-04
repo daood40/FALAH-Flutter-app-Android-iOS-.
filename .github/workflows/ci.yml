@@ -146,6 +146,9 @@ jobs:
       - name: طبقة الإذن — can() والجدول وأ ← موردُ ب
         run: python3 authz_test.py
 
+      - name: الأدوار والصلاحيات وسجلّ التدقيق
+        run: python3 rbac_test.py
+
       - name: سلامة القاعدة وبروفة الهجرات
         run: |
           set -euo pipefail

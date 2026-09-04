@@ -122,8 +122,12 @@ def update_profile(c, user_id, name=None, watermark=None):
     c.commit()
 
 def dict_user(u):
+    """ما يراه العميل عن نفسه. **`role` قراءةٌ فقط**: يُقرأ من القاعدة
+    ويُعرض، ولا يُقبل من جسمِ طلبٍ ولا كعكةٍ ولا ترويسةٍ في أيّ مسار."""
+    keys = u.keys() if hasattr(u, "keys") else ()
     return {"id": u["id"], "email": u["email"], "name": u["name"],
-            "watermark": u["watermark"], "created_at": u["created_at"]}
+            "watermark": u["watermark"], "created_at": u["created_at"],
+            "role": (u["role"] if "role" in keys else None) or "user"}
 
 # ــــــــــــــــــــ الجلسات ــــــــــــــــــــ
 

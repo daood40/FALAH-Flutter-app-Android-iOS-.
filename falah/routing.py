@@ -20,7 +20,7 @@
 وترتيبُ تقييم الحقول محفوظٌ كما كان في `app_post` — لأن اختلافَه يغيّر
 أيَّ خطأٍ يظهر أوّلًا للمستخدم، وهذا سلوكٌ ظاهرٌ لا تفصيلٌ داخليّ.
 """
-from falah import app_routes as R, auth, authz as AZ, billing
+from falah import app_routes as R, audit as AUD, auth, authz as AZ, billing
 from falah import jobs as JB, projects as P, ratelimit as RL, referrals as REF
 from falah.web import Response
 
@@ -82,8 +82,17 @@ GET = [
        action="download", rate=("file", "user"),
        note="الحدُّ قبليٌّ: التنزيل رخيصٌ لكنّه كثير"),
 
+    # ═══ الإدارة — صلاحياتٌ مسمّاة، لا أسماءُ أدوارٍ في المسار ═══
+    _r("GET", "/app/admin/users",  R.admin_users, resource="user", action="list",
+       note="user.list — سردٌ بأعمدةٍ مسمّاة، بلا اشتقاقِ كلمةِ مرورٍ ولا ملح"),
+    _r("GET", "/app/admin/roles",  R.admin_roles, resource="user_role", action="read"),
+    _r("GET", "/app/admin/audit",  R.admin_audit, resource="audit", action="list",
+       note="audit.list — وقراءتُه نفسُها تُسجَّل"),
+
     _r("GET", "/app/projects/", R.project_open, kind="param", owner_field="project",
        resource="project", action="read"),
+    _r("GET", "/app/admin/users/", R.admin_user_get, kind="param", owner_field="user",
+       resource="user", action="read"),
     _r("GET", "/app/jobs/",     R.job_get,     kind="param", owner_field="job",
        resource="job", action="read"),
 ]
@@ -98,7 +107,9 @@ POST = [
        resource="credential", action="update"),
     _r("POST", "/app/verify/confirm",  R.verify_confirm,  auth="public",
        resource="credential", action="update"),
-    _r("POST", "/app/login",  R.login,  auth="public", resource="session", action="create"),
+    _r("POST", "/app/login",  R.login,  auth="public", resource="session", action="create",
+       rate=("login", "ip"),
+       note="حدٌّ لكل عنوان — إلى جانب حدِّ «لكل بريد» في auth.py لا بدلًا منه"),
     _r("POST", "/app/logout", R.logout, auth="public", resource="session", action="delete"),
 
     _r("POST", "/app/account/delete", R.account_delete, resource="account", action="delete"),
@@ -108,7 +119,7 @@ POST = [
        resource="subscription", action="update"),
     _r("POST", "/app/subscription/grant", R.subscription_grant,
        resource="subscription", action="grant",
-       note="يشترط صلاحية manage_billing — لا اسمَ دورٍ مكتوبًا في المسار"),
+       note="يشترط صلاحية subscription.grant — لا اسمَ دورٍ مكتوبًا في المسار"),
     _r("POST", "/app/verify/request", R.verify_request, resource="account", action="update"),
     _r("POST", "/app/profile",  R.profile,         resource="account", action="update"),
     _r("POST", "/app/password", R.password_change, resource="account", action="update"),
@@ -148,6 +159,14 @@ POST = [
        rate=("agent", "user")),
     _r("POST", "/app/agent/build", R.agent_build, resource="agent", action="create"),
 
+    _r("POST", "/app/admin/users/role", R.admin_set_role,
+       resource="user_role", action="update",
+       fields=(("user", "user", INT), ("role", "role", RAW)),
+       note="أخطرُ مسارٍ في النظام — حرّاسُه الثلاثة في authz.may_manage/may_grant"),
+    _r("POST", "/app/admin/users/status", R.admin_set_status,
+       resource="user", action="update",
+       fields=(("user", "user", INT), ("status", "status", RAW))),
+
     _r("POST", "/app/jobs/cancel", R.job_cancel,
        resource="job", action="cancel", owner_field="job",
        fields=(("job", "id", INT),)),
@@ -181,6 +200,7 @@ def declared():
 # عمدًا: التفريقُ يكشف وجودَ مورِدِ غيرك برقمٍ مخمَّن.
 
 MISSING = {
+    "user":         (404, "الحساب غير موجود"),
     "project":      (400, "المشروع غير موجود"),
     "project_item": (400, "المشروع غير موجود"),
     "job":          (400, "المهمّة غير موجودة"),
@@ -217,6 +237,30 @@ def locate(rq, route, path_id):
         return AZ.load(rq.c, kind, rq.params[route.owner_field])
     return AZ.own(route.resource, rq.subject)
 
+# المنعُ **يُسجَّل**. وهذا ما يُظهر المسحَ بالأرقام المتسلسلة: عشرون سطرَ
+# `security.denied` من عنوانٍ واحد في دقيقةٍ تقول ما لا يقوله ردٌّ واحد.
+#
+# ولا يُسقط الطلبَ فشلُ الكتابة هنا: المنعُ نفسُه قد وقع، والسجلُّ أثرُه لا
+# شرطُه. أمّا الأفعالُ الحسّاسة (تغييرُ دورٍ · حذفُ حساب) فتُسجَّل بـ`record`
+# التي تُسقط عند الفشل — انظر `falah/audit.py`.
+_AUDITED_DENIALS = frozenset({AZ.FORBIDDEN, AZ.NO_POLICY})
+
+def _record_denial(rq, route, d):
+    # المجهولُ على مسارٍ يحتاج جلسةً حالةٌ عاديةٌ جدًّا (كعكةٌ انتهت، تبويبةٌ
+    # قديمة)؛ تسجيلُها يُغرق السجلَّ بما لا يُقرأ. ويُسجَّل ما يدلّ: صلاحيةٌ
+    # ناقصةٌ من جلسةٍ صحيحة، وطلبُ مورِدٍ ليس لصاحبه.
+    if d.reason not in _AUDITED_DENIALS and not (
+            d.reason == AZ.NOT_FOUND and rq.subject.authenticated):
+        return
+    AUD.try_record(rq.c, "security.denied", result="denied",
+                   actor_id=rq.subject.user_id, actor_role=rq.subject.role,
+                   resource_type=d.resource.type,
+                   resource_id=d.resource.id, ip=rq.client_ip,
+                   user_agent=rq.get_header("User-Agent", ""),
+                   request_id=rq.request_id,
+                   metadata={"reason": d.reason, "permission": d.permission,
+                             "route": route.method + " " + route.path})
+
 def dispatch(rq):
     """يمرّ بالطلب على الترتيب المُعلَن ويعيد `Response`.
 
@@ -242,6 +286,7 @@ def dispatch(rq):
     res = locate(rq, route, path_id)
     d = AZ.can(rq.subject, route.action, res)
     if not d:
+        _record_denial(rq, route, d)
         return denial_response(d)
 
     # ٣) بقيّةُ الحقول لمسارٍ لم يُحمَّل له مورِدٌ من حقلٍ

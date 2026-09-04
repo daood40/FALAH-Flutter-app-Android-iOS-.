@@ -19,10 +19,19 @@ CREATE TABLE IF NOT EXISTS users(
   pw_salt    BLOB NOT NULL,
   pw_iter    INTEGER NOT NULL,
   status     TEXT NOT NULL DEFAULT 'active',   -- active | suspended
+  -- الدور: حزمةُ صلاحياتٍ مسمّاة في `falah/authz.py`. والافتراضيُّ أقلُّها
+  -- أبدًا — لا حسابَ يصير إداريًّا بإنشاءٍ ولا بهجرة.
+  role       TEXT NOT NULL DEFAULT 'user',      -- user|moderator|admin|super_admin
+  role_changed_at INTEGER,
   verified_at INTEGER,                    -- وقت تأكيد البريد، إن أُكِّد
   created_at INTEGER NOT NULL,
   last_login INTEGER
 );
+-- فهرسُ الدور يملكه `falah/migrate.py` وحده، للسبب نفسه الذي في فهارس
+-- الطابور أدناه: `CREATE INDEX` على عمودٍ جديد يسقط على قاعدةٍ أُنشئت
+-- قبله، و`SCHEMA` تُنفَّذ على القواعد القائمة أيضًا قبل الهجرات.
+-- **وقد سقط فعلًا** أوّلَ تشغيلٍ للبوّابة على قاعدةٍ قائمة: «no such
+-- column: role». الدرسُ نفسُه الذي علّمته الهجرةُ ٠٠٤، مرّةً أخرى.
 
 CREATE TABLE IF NOT EXISTS sessions(
   token_hash TEXT PRIMARY KEY,           -- يُحفظ مجزَّأً: تسريب القاعدة لا يمنح دخولًا
@@ -82,6 +91,36 @@ CREATE TABLE IF NOT EXISTS events(
   at      INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_ev_user ON events(user_id, at DESC);
+
+-- ═══════════ سجلّ التدقيق ═══════════
+-- غيرُ `events`: هذا يحمل الفاعلَ ودورَه والنتيجةَ والمورِدَ والعنوانَ ورقمَ
+-- الطلب. و**لا يُعدَّل ولا يُحذف** — مُشغِّلان أدناه يُجهضان المحاولة في
+-- القاعدة نفسها، لا في التطبيق وحده. والتصحيحُ حدثٌ جديد لا تعديلُ قديم.
+--
+-- ولا مفتاحَ أجنبيّ على `actor_id`: السجلُّ يبقى بعد حذف الحساب. أثرُ ما
+-- جرى لا يُمحى بمحو فاعله.
+CREATE TABLE IF NOT EXISTS audit_logs(
+  id            INTEGER PRIMARY KEY,
+  at            INTEGER NOT NULL,
+  request_id    TEXT,
+  actor_id      INTEGER,
+  actor_role    TEXT,                     -- الدورُ لحظةَ الفعل لا الآن
+  action        TEXT NOT NULL,            -- من الكتالوج المغلق في falah/audit.py
+  resource_type TEXT,
+  resource_id   TEXT,
+  result        TEXT NOT NULL,            -- success | failure | denied
+  ip            TEXT,
+  user_agent    TEXT,
+  metadata      TEXT                      -- JSON مصفًّى — لا سرَّ فيه
+);
+CREATE INDEX IF NOT EXISTS ix_audit_at     ON audit_logs(at DESC);
+CREATE INDEX IF NOT EXISTS ix_audit_actor  ON audit_logs(actor_id, at DESC);
+CREATE INDEX IF NOT EXISTS ix_audit_action ON audit_logs(action, at DESC);
+
+CREATE TRIGGER IF NOT EXISTS audit_logs_no_update BEFORE UPDATE ON audit_logs
+BEGIN SELECT RAISE(ABORT, 'audit_logs is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS audit_logs_no_delete BEFORE DELETE ON audit_logs
+BEGIN SELECT RAISE(ABORT, 'audit_logs is append-only'); END;
 
 -- حدُّ المحاولات: مفتاحٌ (فعل + هدف) وعدّادٌ في نافذةٍ زمنية
 CREATE TABLE IF NOT EXISTS throttle(

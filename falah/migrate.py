@@ -123,11 +123,57 @@ def m004_jobs_index_names(c):
     c.execute("DROP INDEX IF EXISTS ix_jobs_queue")
     c.execute("CREATE INDEX ix_jobs_queue ON jobs(state, not_before, created_at)")
 
+def m005_roles_and_audit(c):
+    """الأدوار وسجلُّ التدقيق — **إضافةٌ محضة**.
+
+    آمنةٌ بالتصنيف بلا تحفّظ: عمودان جديدان بافتراضيّ، وجدولٌ جديد،
+    وفهارس، ومُشغِّلان. لا `DROP` ولا نقلَ بياناتٍ ولا إعادةَ بناءِ جدول،
+    فلا صفَّ يُمَسّ.
+
+    **والافتراضيُّ `'user'` — أقلُّ صلاحيةٍ ممكنة.** لا حسابَ قائمٌ يصير
+    إداريًّا بسبب هذه الهجرة، ولا واحد. وأوّلُ `super_admin` يُصنع بأمرٍ
+    محلّيّ مسجَّل (`python3 -m falah.roles`) لا عبر الشبكة ولا بمفتاح.
+
+    والمُشغِّلان يجعلان `audit_logs` مُلحَقًا فقط في **القاعدة نفسها**، لا
+    في التطبيق وحده: `UPDATE` و`DELETE` عليه يُجهضان. وحدُّ ذلك مكتوبٌ في
+    `docs/P1.2_AUTH_RBAC_DESIGN.md §٨٫٥`.
+    """
+    have = _cols(c, "users")
+    if "role" not in have:
+        c.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'")
+    if "role_changed_at" not in have:
+        c.execute("ALTER TABLE users ADD COLUMN role_changed_at INTEGER")
+    c.execute("CREATE INDEX IF NOT EXISTS ix_users_role ON users(role)")
+    c.executescript("""
+      CREATE TABLE IF NOT EXISTS audit_logs(
+        id            INTEGER PRIMARY KEY,
+        at            INTEGER NOT NULL,
+        request_id    TEXT,
+        actor_id      INTEGER,
+        actor_role    TEXT,
+        action        TEXT NOT NULL,
+        resource_type TEXT,
+        resource_id   TEXT,
+        result        TEXT NOT NULL,
+        ip            TEXT,
+        user_agent    TEXT,
+        metadata      TEXT
+      );
+      CREATE INDEX IF NOT EXISTS ix_audit_at     ON audit_logs(at DESC);
+      CREATE INDEX IF NOT EXISTS ix_audit_actor  ON audit_logs(actor_id, at DESC);
+      CREATE INDEX IF NOT EXISTS ix_audit_action ON audit_logs(action, at DESC);
+      CREATE TRIGGER IF NOT EXISTS audit_logs_no_update BEFORE UPDATE ON audit_logs
+      BEGIN SELECT RAISE(ABORT, 'audit_logs is append-only'); END;
+      CREATE TRIGGER IF NOT EXISTS audit_logs_no_delete BEFORE DELETE ON audit_logs
+      BEGIN SELECT RAISE(ABORT, 'audit_logs is append-only'); END;
+    """)
+
 MIGRATIONS = [
     (1, "jobs_queue",        False, m001_jobs_queue),
     (2, "jobs_idempotency",  False, m002_jobs_idempotency),
     (3, "jobs_state_guard",  True,  m003_jobs_state_guard),
     (4, "jobs_index_names",  False, m004_jobs_index_names),
+    (5, "roles_and_audit",   False, m005_roles_and_audit),
 ]
 
 # ═══════════ المشغّل ═══════════

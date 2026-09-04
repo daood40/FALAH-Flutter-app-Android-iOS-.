@@ -34,10 +34,6 @@
 
 | METHOD | PATH | AUTH | INPUT | OUTPUT | ERRORS |
 |---|---|---|---|---|---|
-| GET | `/app/admin/audit` | صلاحية audit.list | limit, offset, action, actor, result | {total, events[]} — وقراءتُه نفسُها تُسجَّل | 401 · 403 |
-| GET | `/app/admin/roles` | صلاحية user_role.read | — | {roles, assignable, permissions} | 401 · 403 |
-| GET | `/app/admin/users` | صلاحية user.list | limit, offset, role | {total, users[]} — أعمدةٌ مسمّاة بلا اشتقاقِ كلمةِ مرورٍ ولا ملح | 401 · 403 |
-| GET | `/app/admin/users/{id}` | صلاحية user.read | — | {user} | 401 · 403 · 404 |
 | GET | `/app/config` | عامّ | — | {invite_required, origin} | — |
 | GET | `/app/entitlements` | جلسة | — | الخطّة والحدود والمستهلَك | 401 |
 | GET | `/app/exports` | جلسة | — | آخر ٥٠ تصديرًا | 401 |
@@ -45,7 +41,7 @@
 | GET | `/app/jobs` | جلسة | — | مهامّه وإحصاء الطابور والحدود | 401 |
 | GET | `/app/jobs/{id}` | جلسة+ملكية | — | {state, progress, step, result, error, retry_after} | 401 · 400 ليست مهمّتك |
 | GET | `/app/limits` | جلسة | — | حدود الطابور والموارد | 401 |
-| GET | `/app/me` | عامّ | الكعكة | {user} أو {user:null} — و`user.role` **قراءةٌ فقط** | — |
+| GET | `/app/me` | عامّ | الكعكة | {user} أو {user:null} | — |
 | GET | `/app/plans` | عامّ | — | الخطط وما لا يُباع | — |
 | GET | `/app/projects` | جلسة | — | مشاريع صاحب الجلسة | 401 |
 | GET | `/app/projects/{id}` | جلسة+ملكية | — | المشروع بعناصره مفحوصةً الآن | 401 · 400 ليس مشروعك |
@@ -56,8 +52,6 @@
 | METHOD | PATH | AUTH | INPUT | OUTPUT | ERRORS |
 |---|---|---|---|---|---|
 | POST | `/app/account/delete` | جلسة+CSRF | confirm='حذف' | {ok, gone} | 400 بلا تأكيد |
-| POST | `/app/admin/users/role` | صلاحية user_role.update | user, role, reason | {user} — وتُنهى جلساتُ الهدف | 400 دورٌ مجهول · 403 حارسُ التسلسل · 404 |
-| POST | `/app/admin/users/status` | صلاحية user.update | user, status, reason | {user} | 400 · 403 · 404 |
 | POST | `/app/agent` | جلسة+CSRF | answers | السؤال التالي أو الخطّة | 404 |
 | POST | `/app/agent/build` | جلسة+CSRF | answers | 201 {project, added} | 400 |
 | POST | `/app/export` | جلسة+ملكية | project | **202** {job, cards} — ويعيد المهمّة القائمة إن كان الطلب مكرَّرًا | 400 فارغ/حدّ · 409 محجوب أو منحرف |
@@ -77,7 +71,7 @@
 | POST | `/app/projects/update` | جلسة+ملكية | id + الحقول | {ok} | 400 |
 | POST | `/app/register` | عامّ+CSRF | email, password, name, watermark, invite, ref | 201 {user, entitlements} | 400 · 403 دعوة |
 | POST | `/app/subscription/cancel` | جلسة+CSRF | — | {subscription, entitlements} | 400 |
-| POST | `/app/subscription/grant` | صلاحية subscription.grant | user, plan, days, note | {subscription} | 401 · 403 |
+| POST | `/app/subscription/grant` | مفتاح إدارة | user, plan, days, note | {subscription} | 403 |
 | POST | `/app/subscription/store-event` | جلسة+CSRF | provider, event | {subscription} بعد سؤال المتجر | **402** إيصالٌ لم يثبت |
 | POST | `/app/verify/confirm` | رمز+CSRF | token | {ok} | 400 |
 | POST | `/app/verify/request` | جلسة+CSRF | — | {ok} | 401 |
@@ -88,9 +82,6 @@
 - كل طلب كتابةٍ يشترط ترويسة `X-FALAH: 1`، و`Origin` المطابق إن حُدِّد `FALAH_ORIGIN`.
 - الجلسة كعكة `falah_sid` — HttpOnly · SameSite=Strict · Secure خلف HTTPS.
 - «ملكية» تعني أن الصفَّ يُقرأ بشرط `user_id` — رقمٌ مخمَّن لا يكشف عمل غيره.
-- كل مسارٍ يُقرَّر إذنُه في `falah/authz.py` بصلاحيةٍ اسمُها `<مورِد>.<فعل>` ونطاقٍ (OWNER · SELF · ANY). ولا اسمَ دورٍ في شرطٍ واحد.
-- **`X-FALAH-ADMIN` أُلغي في P1.2**: الإدارةُ بدورٍ على حسابٍ حقيقيّ. وأوّلُ `super_admin` يُصنع بـ`python3 -m falah.roles grant <بريد> super_admin`.
-- الأفعالُ الحسّاسة تُسجَّل في `audit_logs` — يُلحق ولا يُعدَّل ولا يُحذف، ولا سرَّ فيه.
 - الخطأ الداخليّ يردّ `{"error": "خطأ داخلي"}` ويُسجَّل تفصيله عندنا؛ ونصّ الاستثناء لا يُرسل.
 - `/app/export` و`/app/video` **لا تُصيّران داخل الطلب**: تردّان ٢٠٢ وتُستطلع المهمّة على `/app/jobs/<id>`.
 

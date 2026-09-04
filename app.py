@@ -27,7 +27,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import api
 from falah import store, auth, jobs as JB
-from falah import authz as AZ, routing as RT, settings as CFG
+from falah import audit as AUD, authz as AZ, routing as RT, settings as CFG
 from falah.web import Request
 
 CFG.refresh()          # إعادةُ تحميل الوحدة تعيد قراءةَ البيئة
@@ -39,7 +39,6 @@ COOKIE  = CFG.COOKIE
 SECURE  = CFG.SECURE
 ORIGIN  = CFG.ORIGIN
 INVITE  = CFG.INVITE
-ADMIN_KEY = CFG.ADMIN_KEY
 TRUST_PROXY = CFG.TRUST_PROXY
 MAX_BODY = CFG.MAX_BODY
 
@@ -280,14 +279,14 @@ class App(BaseHTTPRequestHandler):
     # ــــــــــــــــــــ مسارات التطبيق ــــــــــــــــــــ
 
     def subject(self, u):
-        """الفاعلُ كما تراه طبقةُ الإذن. الأدوارُ تُشتقّ هنا لا تُقرأ من طلب.
+        """الفاعلُ كما تراه طبقةُ الإذن. **الدورُ من القاعدة وحدها.**
 
-        اليوم مصدرٌ واحد: المفتاحُ الإداريّ — كما كان `trusted` تمامًا.
-        وفي P1.2 تُقرأ الأدوارُ من القاعدة داخل `authz.roles_for`، ولا
-        يتغيّر هذا السطر ولا أيُّ معالِج.
+        كان في P1.1 مصدرُ الأدوار مفتاحًا في ترويسة (`X-FALAH-ADMIN`).
+        وقد أُلغي في P1.2: من يملك المفتاحَ يملك كلَّ شيءٍ ولا يُعرف مَن
+        فعل، وهو ما نصَّ الأمرُ على إزالته. صار الدورُ عمودًا على الحساب،
+        يُقرأ مع الجلسة، ولا يُقبل من ترويسةٍ ولا كعكةٍ ولا جسمِ طلب.
         """
-        ok = bool(ADMIN_KEY) and self.headers.get("X-FALAH-ADMIN") == ADMIN_KEY
-        return AZ.subject_for(u["id"] if u else None, admin_key_ok=ok)
+        return AZ.subject_for(u)
 
     def app_request(self, method, path, body):
         """دورةُ حياةِ الطلب كاملةً — وموضعُ ترجمةِ الأخطاء الوحيد.
@@ -300,7 +299,8 @@ class App(BaseHTTPRequestHandler):
         rq = None
         try:
             u = self.user(c)
-            rq = Request(path=path, method=method,
+            rid = AUD.new_request_id()
+            rq = Request(path=path, method=method, request_id=rid,
                          query=urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query),
                          body=body, c=c, root=HERE, content_db=DB,
                          user=u, subject=self.subject(u),
@@ -370,10 +370,11 @@ def check_config():
         if os.environ.get("FALAH_INLINE_WORKER", "1") != "0":
             warn.append("عاملٌ داخل الخادم في الإنتاج — يزاحم استقبال الطلبات. "
                         "اضبط FALAH_INLINE_WORKER=0 وشغّل worker.py")
-        if ADMIN_KEY and len(ADMIN_KEY) < 24:
-            fatal.append("FALAH_ADMIN_KEY قصيرٌ جدًّا — لا يقلّ عن ٢٤ محرفًا عشوائيًّا")
-        if not ADMIN_KEY:
-            warn.append("لا FALAH_ADMIN_KEY — منحُ الاشتراكات وإيصالاتُ المتجر معطَّلة")
+        # المفتاحُ المشترك أُلغي في P1.2. ووجودُه في البيئة لا يمنح شيئًا
+        # — يُقال ذلك صراحةً لئلّا يظنّ مشغّلٌ أنه ما زال يعمل.
+        if os.environ.get("FALAH_ADMIN_KEY"):
+            warn.append("FALAH_ADMIN_KEY لم يعد يمنح شيئًا منذ P1.2 — "
+                        "الإدارةُ بدورٍ على حساب: python3 -m falah.roles")
         # المتاجر: إمّا مضبوطةٌ كاملةً أو معطَّلةٌ كاملةً — لا نصفَ إعداد
         ap = [k for k in ("FALAH_APPLE_BUNDLE_ID", "FALAH_APPLE_ISSUER_ID",
                           "FALAH_APPLE_KEY_ID", "FALAH_APPLE_KEY_P8")

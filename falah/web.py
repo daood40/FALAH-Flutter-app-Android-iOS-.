@@ -32,17 +32,18 @@ class Request:
     """
     __slots__ = ("path", "method", "query", "body", "user", "subject", "c",
                  "root", "content_db", "params", "get_header", "client_ip",
-                 "session_token", "_content")
+                 "session_token", "request_id", "_content")
 
     def __init__(self, *, path, method, query, body, c, root, content_db,
                  user=None, subject=None, get_header=None, client_ip="-",
-                 session_token=None):
+                 session_token=None, request_id=None):
         self.path, self.method = path, method
         self.query, self.body = query, body
         self.c, self.root, self.content_db = c, root, content_db
         self.user, self.subject = user, subject
         self.get_header = get_header or (lambda name, default=None: default)
         self.client_ip, self.session_token = client_ip, session_token
+        self.request_id = request_id
         self.params = {}
         self._content = None
 

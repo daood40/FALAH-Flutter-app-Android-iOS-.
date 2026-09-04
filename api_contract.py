@@ -66,7 +66,8 @@ SPEC = {
 
   "/app/config":       ("GET",  "عامّ", "—", "{invite_required, origin}", "—"),
   "/app/plans":        ("GET",  "عامّ", "—", "الخطط وما لا يُباع", "—"),
-  "/app/me":           ("GET",  "عامّ", "الكعكة", "{user} أو {user:null}", "—"),
+  "/app/me":           ("GET",  "عامّ", "الكعكة",
+                        "{user} أو {user:null} — و`user.role` **قراءةٌ فقط**", "—"),
   "/app/entitlements": ("GET",  "جلسة", "—", "الخطّة والحدود والمستهلَك", "401"),
   "/app/limits":       ("GET",  "جلسة", "—", "حدود الطابور والموارد", "401"),
   "/app/referrals":    ("GET",  "جلسة", "—", "رمز الإحالة وحصادها", "401"),
@@ -115,8 +116,24 @@ SPEC = {
   "/app/subscription/store-event": ("POST", "جلسة+CSRF", "provider, event",
                                     "{subscription} بعد سؤال المتجر",
                                     "**402** إيصالٌ لم يثبت"),
-  "/app/subscription/grant": ("POST", "مفتاح إدارة", "user, plan, days, note",
-                              "{subscription}", "403"),
+  "/app/subscription/grant": ("POST", "صلاحية subscription.grant", "user, plan, days, note",
+                              "{subscription}", "401 · 403"),
+
+  # ═══ الإدارة — أُضيفت في P1.2. كلُّها بصلاحياتٍ مسمّاة لا بأسماء أدوار ═══
+  "/app/admin/users":  ("GET", "صلاحية user.list", "limit, offset, role",
+                        "{total, users[]} — أعمدةٌ مسمّاة بلا اشتقاقِ كلمةِ مرورٍ ولا ملح",
+                        "401 · 403"),
+  "/app/admin/users/{id}": ("GET", "صلاحية user.read", "—", "{user}", "401 · 403 · 404"),
+  "/app/admin/users/role": ("POST", "صلاحية user_role.update",
+                            "user, role, reason",
+                            "{user} — وتُنهى جلساتُ الهدف",
+                            "400 دورٌ مجهول · 403 حارسُ التسلسل · 404"),
+  "/app/admin/users/status": ("POST", "صلاحية user.update", "user, status, reason",
+                              "{user}", "400 · 403 · 404"),
+  "/app/admin/roles":  ("GET", "صلاحية user_role.read", "—",
+                        "{roles, assignable, permissions}", "401 · 403"),
+  "/app/admin/audit":  ("GET", "صلاحية audit.list", "limit, offset, action, actor, result",
+                        "{total, events[]} — وقراءتُه نفسُها تُسجَّل", "401 · 403"),
 }
 
 def frontend_calls():
@@ -151,6 +168,12 @@ def table():
             "- كل طلب كتابةٍ يشترط ترويسة `X-FALAH: 1`، و`Origin` المطابق إن حُدِّد `FALAH_ORIGIN`.",
             "- الجلسة كعكة `falah_sid` — HttpOnly · SameSite=Strict · Secure خلف HTTPS.",
             "- «ملكية» تعني أن الصفَّ يُقرأ بشرط `user_id` — رقمٌ مخمَّن لا يكشف عمل غيره.",
+            "- كل مسارٍ يُقرَّر إذنُه في `falah/authz.py` بصلاحيةٍ اسمُها `<مورِد>.<فعل>` "
+            "ونطاقٍ (OWNER · SELF · ANY). ولا اسمَ دورٍ في شرطٍ واحد.",
+            "- **`X-FALAH-ADMIN` أُلغي في P1.2**: الإدارةُ بدورٍ على حسابٍ حقيقيّ. "
+            "وأوّلُ `super_admin` يُصنع بـ`python3 -m falah.roles grant <بريد> super_admin`.",
+            "- الأفعالُ الحسّاسة تُسجَّل في `audit_logs` — يُلحق ولا يُعدَّل ولا يُحذف، "
+            "ولا سرَّ فيه.",
             "- الخطأ الداخليّ يردّ `{\"error\": \"خطأ داخلي\"}` ويُسجَّل تفصيله عندنا؛ "
             "ونصّ الاستثناء لا يُرسل.",
             "- `/app/export` و`/app/video` **لا تُصيّران داخل الطلب**: تردّان ٢٠٢ "

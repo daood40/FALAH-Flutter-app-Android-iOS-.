@@ -12,17 +12,17 @@ UI   = os.path.join(HERE, "falah-app.html")          # مساحة العمل
 DEMO = os.path.join(HERE, "falah-agent.html")        # النموذج التفاعلي (بلا حساب)
 COOKIE = "falah_sid"
 
-SECURE = ORIGIN = INVITE = ADMIN_KEY = None
+SECURE = ORIGIN = INVITE = None
 TRUST_PROXY = False
 MAX_BODY = 1_000_000
 
 def refresh():
     """يعيد قراءةَ البيئة. يُنادى عند الاستيراد وعند إعادة التحميل."""
-    global SECURE, ORIGIN, INVITE, ADMIN_KEY, TRUST_PROXY, MAX_BODY
+    global SECURE, ORIGIN, INVITE, TRUST_PROXY, MAX_BODY
     SECURE = os.environ.get("FALAH_SECURE") == "1"     # خلف HTTPS: كعكةٌ لا تسافر إلا مشفّرة
     ORIGIN = os.environ.get("FALAH_ORIGIN", "").rstrip("/")    # نطاق الإنتاج، إن حُدِّد
     INVITE = os.environ.get("FALAH_INVITE", "").strip()        # إطلاقٌ مغلق: لا حساب إلا برمز دعوة
-    ADMIN_KEY = os.environ.get("FALAH_ADMIN_KEY", "").strip()  # منح الاشتراك وإيصالات المتجر
+    # لا `FALAH_ADMIN_KEY`: أُلغي في P1.2. الإدارةُ بدورٍ على حسابٍ حقيقيّ.
     # لا تُقرأ X-Forwarded-For إلا بإعلانٍ صريح — انظر `App.client_ip`
     TRUST_PROXY = os.environ.get("FALAH_TRUST_PROXY") == "1"
     MAX_BODY = int(os.environ.get("FALAH_MAX_BODY", 1_000_000))

@@ -138,12 +138,11 @@ def queries_for(paths):
 def measure(label):
     d = tempfile.mkdtemp(prefix="falah-bench-")
     port = free_port(); base = f"http://127.0.0.1:{port}"
-    admin = "bench-" + os.urandom(16).hex()      # ٣٧ محرفًا — مؤقّتٌ لهذه العملية
     env = dict(os.environ, FALAH_APP_DB=os.path.join(d, "app.db"), PORT=str(port),
                # بلا عاملٍ داخليّ: نقيس زمنَ **الوضع في الطابور** لا التصيير.
                FALAH_INLINE_WORKER="0", FALAH_RATE_REGISTER="10000",
                FALAH_RATE_EXPORT="10000", FALAH_RATE_VIDEO="10000",
-               FALAH_ADMIN_KEY=admin)
+               FALAH_RATE_LOGIN="10000")
     log = open(os.path.join(d, "app.log"), "w")
     p = subprocess.Popen([sys.executable, "app.py"], cwd=HERE, env=env,
                          stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
@@ -165,11 +164,18 @@ def measure(label):
         if not cookie: raise SystemExit(f"تعذّر إنشاء حساب القياس: {s} {dd}")
 
         # خطّةٌ موسَّعة لحساب القياس وحده: الخطّةُ المجانية حدُّها مشروعان
-        # وصفرُ مقاطع، فلا يبلغ القياسُ ما يريد قياسه. والمنحة عبر المسار
-        # الإداريّ نفسه بمفتاحٍ مؤقّتٍ لهذه العملية — لا بإضعاف حدٍّ في الشيفرة.
+        # وصفرُ مقاطع، فلا يبلغ القياسُ ما يريد قياسه.
+        #
+        # والمنحةُ عبر المسار الإداريّ نفسه — لكن بدورٍ حقيقيّ لا بمفتاحٍ
+        # مشترك (أُلغي في P1.2). الحسابُ يُرقّى بأمرٍ محلّيّ ثم يعيد الدخول،
+        # لأن الترقيةَ تُنهي الجلسات. ولا يُضعَّف حدٌّ في الشيفرة لأجل قياس.
+        subprocess.run([sys.executable, "-m", "falah.roles", "grant", mail,
+                        "super_admin", "--reason", "bench"],
+                       cwd=HERE, env=env, capture_output=True, check=True)
+        s2, d2, ck2 = req(base, "/app/login", {"email": mail, "password": PW})
+        cookie = ck2[0].split(";")[0] if ck2 else cookie
         s2, d2, _ = req(base, "/app/subscription/grant",
-                        {"plan": "studio", "days": 1}, cookie,
-                        hdr={"X-FALAH-ADMIN": admin})
+                        {"plan": "studio", "days": 1}, cookie)
         if s2 != 200: raise SystemExit(f"تعذّرت منحةُ خطّة القياس: {s2} {d2}")
 
         # مشروعٌ بعنصرين — لقياس التصدير ولملء `/app/projects`

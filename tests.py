@@ -1448,8 +1448,14 @@ check("ويُردّ ٤١٣ مع إغلاق الاتصال",
 from falah import ratelimit as _RL, routing as _RT
 _RLsrc = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
                            "falah", "ratelimit.py"), encoding="utf-8").read()
-check("حدُّ المعدّل يشمل التصدير والمقطع والوكيل والتسجيل والتنزيل",
-      set(_RL.RATE) == {"export", "video", "agent", "register", "file"}, str(set(_RL.RATE)))
+check("حدُّ المعدّل يشمل التصدير والمقطع والوكيل والتسجيل والتنزيل والدخول",
+      set(_RL.RATE) == {"export", "video", "agent", "register", "file", "login"},
+      str(set(_RL.RATE)))
+# حدُّ «لكل بريد» في auth.py لا يمنع المسحَ على ألفِ بريدٍ بكلمةٍ واحدة.
+# فيلزم حدٌّ ثانٍ لكل عنوان — والاثنان معًا لا أحدُهما.
+check("وحدُّ الدخول لكل عنوان **إلى جانب** حدِّ «لكل بريد» لا بدلًا منه",
+      "login" in _RL.RATE and AU.MAX_TRIES > 0 and AU.WINDOW > 0,
+      f"عنوان {_RL.RATE['login']} · بريد ({AU.MAX_TRIES}, {AU.WINDOW})")
 # يُختبر أثرًا لا نصًّا: الاسم يُبنى في الشيفرة فلا يظهر حرفيًّا فيها
 _oldrate = os.environ.get("FALAH_RATE_EXPORT")
 os.environ["FALAH_RATE_EXPORT"] = "7"
@@ -1472,7 +1478,7 @@ check("والعدُّ عند القبول لا عند الطلب — فلا يُ
       and _arsrc.index('RL.bump(c, "video"') > _arsrc.index('JB.enqueue(c, u["id"], "video"'))
 check("والمساراتُ ذاتُ الحدّ القبليّ معلَنةٌ في الجدول لا مبثوثةٌ في المعالِجات",
       {r.rate[0] for rs in _RT.TABLE.values() for r in rs if r.rate}
-      == {"file", "register", "agent"})
+      == {"file", "register", "agent", "login"})
 check("ويُردّ ٤٢٩ مع Retry-After لا ٤٠٠",
       "429" in _rtsrc and "Retry-After" in _RLsrc)
 
@@ -1585,10 +1591,23 @@ check("إنتاجٌ بلا FALAH_ORIGIN يسقط",
 check("إنتاجٌ بنطاقٍ غير مشفَّر يسقط",
       _cfg(True, FALAH_ENV="production", FALAH_SECURE="1",
            FALAH_ORIGIN="http://x.com", FALAH_INLINE_WORKER="0"))
-check("إنتاجٌ بمفتاح إدارةٍ قصير يسقط",
-      _cfg(True, FALAH_ENV="production", FALAH_SECURE="1",
-           FALAH_ORIGIN="https://x.com", FALAH_INLINE_WORKER="0",
-           FALAH_ADMIN_KEY="short"))
+# كان هذا يفحص أن مفتاحًا إداريًّا قصيرًا يُسقط الإقلاع. **والمفتاحُ أُلغي
+# في P1.2** — فلا معنى لفحص طوله. والبديلُ أقوى: أن وجودَه لا يمنح شيئًا
+# البتّة، لا في الإعداد ولا في الإذن.
+os.environ["FALAH_ADMIN_KEY"] = "k" * 40
+importlib.reload(APP)
+check("المفتاحُ المشترك أُلغي: وجودُه لا يمنع الإقلاع ولا يمنح دورًا",
+      not _cfg(False, FALAH_ENV="production", FALAH_SECURE="1",
+               FALAH_ORIGIN="https://x.com", FALAH_INLINE_WORKER="0",
+               FALAH_ADMIN_KEY="short")
+      and not hasattr(APP, "ADMIN_KEY")
+      and "ADMIN_KEY" not in dir(__import__("falah.settings", fromlist=["x"])))
+os.environ.pop("FALAH_ADMIN_KEY", None)
+importlib.reload(APP)
+_azsrc = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "falah", "authz.py"), encoding="utf-8").read()
+check("ولا أثرَ له في طبقة الإذن",
+      "ADMIN_KEY" not in _azsrc and "admin_key" not in _azsrc)
 check("إنتاجٌ مضبوطٌ يمرّ",
       not _cfg(False, FALAH_ENV="production", FALAH_SECURE="1",
                FALAH_ORIGIN="https://x.com", FALAH_INLINE_WORKER="0",
@@ -1601,6 +1620,58 @@ check("الفحص يجري قبل الاستقبال لا بعده",
       _asrc.index("check_config()") < _asrc.index("serve_forever"))
 check("ويخرج برمز EX_CONFIG لا برمزٍ عامّ", "SystemExit(78)" in _asrc)
 check("و«الإنتاج» يُعلَن ولا يُخمَّن", 'FALAH_ENV' in _asrc)
+
+print("\n▸ الهجرة ٠٠٥ — الأدوار وسجلّ التدقيق")
+from falah import migrate as MG
+_msrc = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                          "falah", "migrate.py"), encoding="utf-8").read()
+# الدرسُ الذي علّمته الهجرةُ ٠٠٤ يُختبر هنا صراحةً: قاعدةٌ **جديدة** وقاعدةٌ
+# **مهاجَرة** يجب أن تنتهيا إلى المخطَّط نفسه. وقد سقطت البوّابةُ فعلًا أوّلَ
+# مرّة بـ«no such column: role» لأن الفهرس كان في SCHEMA لا في الهجرة.
+def _schema_of(old_style):
+    d = _tf.mkdtemp(); dbp = os.path.join(d, "x.db")
+    if old_style:
+        cc0 = sqlite3.connect(dbp)
+        cc0.executescript("""CREATE TABLE users(id INTEGER PRIMARY KEY,
+          email TEXT UNIQUE NOT NULL, name TEXT, watermark TEXT,
+          pw_hash BLOB NOT NULL, pw_salt BLOB NOT NULL, pw_iter INTEGER NOT NULL,
+          status TEXT NOT NULL DEFAULT 'active', verified_at INTEGER,
+          created_at INTEGER NOT NULL, last_login INTEGER);
+          INSERT INTO users(email,pw_hash,pw_salt,pw_iter,created_at)
+          VALUES('old@x.test',x'00',x'00',1,1);""")
+        cc0.commit(); cc0.close()
+    old_env = os.environ.get("FALAH_APP_DB")
+    os.environ["FALAH_APP_DB"] = dbp
+    importlib.reload(ST)
+    cc0 = ST.init()
+    objs = {(r[0], r[1]) for r in cc0.execute(
+        "SELECT type,name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'")}
+    ucols = {(r[1], r[2].upper(), r[3], r[4] or "")
+             for r in cc0.execute("PRAGMA table_info(users)")}
+    nonuser = cc0.execute("SELECT COUNT(*) FROM users WHERE role<>'user'").fetchone()[0]
+    cc0.close()
+    if old_env is None: os.environ.pop("FALAH_APP_DB", None)
+    else: os.environ["FALAH_APP_DB"] = old_env
+    importlib.reload(ST)
+    return objs, ucols, nonuser
+
+_mig, _fresh = _schema_of(True), _schema_of(False)
+check("قاعدةٌ مهاجَرةٌ وقاعدةٌ جديدة تنتهيان إلى الكائنات نفسها",
+      _mig[0] == _fresh[0], str(sorted(_mig[0] ^ _fresh[0])))
+check("وأعمدةُ users متطابقةٌ نوعًا وافتراضيًّا",
+      _mig[1] == _fresh[1], str(sorted(_mig[1] ^ _fresh[1])))
+check("**ولا مستخدمَ قائمٌ صار إداريًّا بالهجرة**",
+      _mig[2] == 0 and _fresh[2] == 0, f"{_mig[2]} · {_fresh[2]}")
+check("والافتراضيُّ في العمود نفسه هو أقلُّ الأدوار",
+      any(c[0] == "role" and "'user'" in c[3] for c in _fresh[1]), str(_fresh[1]))
+check("وسجلُّ التدقيق ومُشغِّلاه موجودان في المسارين",
+      {("table", "audit_logs"), ("trigger", "audit_logs_no_update"),
+       ("trigger", "audit_logs_no_delete")} <= _mig[0] <= _mig[0] | _fresh[0]
+      and {("trigger", "audit_logs_no_delete")} <= _fresh[0])
+check("والهجرة ٠٠٥ مصنَّفةٌ آمنة — إضافةٌ محضة بلا DROP ولا نقلِ بيانات",
+      any(v == 5 and not destructive for v, _n, destructive, _f in MG.MIGRATIONS)
+      and "DROP TABLE" not in (MG.m005_roles_and_audit.__doc__ or "")
+      and "DROP TABLE" not in _msrc.split("def m005")[1].split("MIGRATIONS")[0])
 
 print("\n▸ حارس الهجرات الهادمة")
 from falah import migrate as MG

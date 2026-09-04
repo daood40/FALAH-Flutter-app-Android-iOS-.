@@ -56,6 +56,9 @@ GATES = [
     ("authz",    "طبقة الإذن", [PY, "authz_test.py"],
      True, "سقوطٌ هنا يعني قرارَ إذنٍ خاطئًا أو مسارًا بلا سياسة — أوقف كلَّ شيء وأصلحه",
      None),
+    ("rbac",     "الأدوار والتدقيق", [PY, "rbac_test.py"],
+     True, "سقوطٌ هنا يعني تصعيدَ امتيازٍ ممكنًا أو سجلًّا لا يُوثق به — أوقف كلَّ شيء",
+     None),
     ("docker",   "إعداد الحاوية", None,
      True, "docker compose config يشرح الخطأ", None),
     ("build",    "بناء صورة الحاوية", ["docker", "build", "-t", "falah:gate", "."],
@@ -191,7 +194,7 @@ def main():
                 print(f"  gate    : {key} — {title}")
                 print(f"  reason  : {first_failure(out)[:180]}")
                 print(f"  command : make {key}" if key in
-                      ("lint", "types", "security", "contract", "unit", "audit", "authz",
+                      ("lint", "types", "security", "contract", "unit", "audit", "authz", "rbac",
                        "ui", "failure", "leak", "deps")
                       else f"  command : {' '.join(g[2] or [])}")
                 print(f"  file    : {f or '—'}" + (f":{ln}" if ln else ""))

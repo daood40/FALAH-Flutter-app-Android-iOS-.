@@ -42,9 +42,9 @@ def head(t): print(f"\n▸ {t}")
 def unit():
     head("can() — قرارٌ صافٍ بلا خادم")
     anon = AZ.ANON
-    a = AZ.Subject(1)
-    b = AZ.Subject(2)
-    admin = AZ.subject_for(1, admin_key_ok=True)
+    a = AZ.Subject(1, {"anonymous", "user"})
+    b = AZ.Subject(2, {"anonymous", "user"})
+    admin = AZ.Subject(1, {"anonymous", "admin"})
 
     mine    = AZ.Resource("project", 7, owner_id=1)
     theirs  = AZ.Resource("project", 8, owner_id=2)
@@ -76,13 +76,17 @@ def unit():
           AZ.can(a, "grant", AZ.own("subscription", a)).reason == AZ.FORBIDDEN)
     check("ومن يملكها يُسمح له", bool(AZ.can(admin, "grant", AZ.own("subscription", admin))))
     check("والصلاحيةُ تُشتقّ من الدور لا تُكتب في المسار",
-          admin.has("manage_billing") and not a.has("manage_billing"))
+          admin.has("subscription.grant") and not a.has("subscription.grant"))
     check("والمجهولُ لا يبلغ المنحة ولو لم يكن ثمّة دور",
           AZ.can(anon, "grant", AZ.own("subscription", anon)).reason == AZ.UNAUTHENTICATED)
 
+    # `account.read` غيرُ موجودةٍ عمدًا: لا مسارَ يقرأ حسابًا بهذا الاسم
+    # («من أنا» مسارُ كتالوج). ولا تُخترع صلاحيةٌ لعمليةٍ لا وجود لها.
+    check("ومورِدٌ لا عمليةَ له لا صلاحيةَ له — ولا يُخترع",
+          AZ.can(a, "read", AZ.Resource("account", 1, owner_id=1)).reason == AZ.NO_POLICY)
     check("مورِدُ الذات لا يُطلب لغيرك",
-          not AZ.can(a, "read", AZ.Resource("account", 2, owner_id=2)))
-    check("ويُسمح لصاحبه", bool(AZ.can(a, "read", AZ.Resource("account", 1, owner_id=1))))
+          not AZ.can(a, "update", AZ.Resource("account", 2, owner_id=2)))
+    check("ويُسمح لصاحبه", bool(AZ.can(a, "update", AZ.Resource("account", 1, owner_id=1))))
 
     # ملفُّ التصدير: المالكُ يُشتقّ من موضع الملفّ، ويُختبر بلا جلسة
     d = tempfile.mkdtemp(prefix="falah-authz-")
@@ -91,13 +95,13 @@ def unit():
     open(os.path.join(d, "secret.txt"), "w").write("s")
     r = AZ.export_file(d, "exports/2/x.png")
     check("ملفُّ الصادرات مالكُه مقروءٌ من موضعه", r.owner_id == 2 and r.exists)
-    check("وصاحبُه يُسمح له", bool(AZ.can(AZ.Subject(2), "download", r)))
-    check("وغيرُه يُمنع", not AZ.can(AZ.Subject(3), "download", r))
+    check("وصاحبُه يُسمح له", bool(AZ.can(AZ.Subject(2, {"user"}), "download", r)))
+    check("وغيرُه يُمنع", not AZ.can(AZ.Subject(3, {"user"}), "download", r))
     for esc in ("../secret.txt", "exports/../secret.txt", "/etc/passwd",
                 "exports/2/../../secret.txt", "exports", "exports/2"):
         rr = AZ.export_file(d, esc)
         check(f"وما خرج من الصادرات فلا مالكَ له: {esc}",
-              not AZ.can(AZ.Subject(2), "download", rr), str(rr.owner_id))
+              not AZ.can(AZ.Subject(2, {"user"}), "download", rr), str(rr.owner_id))
 
 def _raises(fn, exc):
     try: fn()
@@ -120,9 +124,12 @@ def table():
     check("وكلُّ معالِجٍ قابلٌ للنداء", all(callable(r.handler) for r in routes))
 
     ownerful = [r for r in routes if r.owner_field]
-    check("وكلُّ مسارٍ يأخذ رقمَ مورِدٍ من الطلب يُحمَّل مورِدُه ويُقارَن مالكُه",
-          all(AZ.POLICY[(r.resource, r.action)] is AZ.OWNER for r in ownerful),
+    check("وكلُّ مسارٍ يأخذ رقمَ مورِدٍ من الطلب يُحمَّل مورِدُه",
+          all((r.resource, r.action) in AZ.POLICY for r in ownerful),
           f"{len(ownerful)} مسارًا")
+    ownerscoped = [r for r in ownerful if AZ.POLICY[(r.resource, r.action)] is AZ.OWNER]
+    check("ومورِدُ المستخدم منها يُقارَن مالكُه",
+          len(ownerscoped) >= 11, f"{len(ownerscoped)} مسارًا بنطاق OWNER")
 
     # مسارٌ لم يُعلَن يقع على القاعدة العامّة — لا يُخترع له إذن
     r, _ = RT.resolve("POST", "/app/does-not-exist")

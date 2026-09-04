@@ -46,38 +46,127 @@ ACTIONS = frozenset({
 })
 
 # ───────────────────────── الصلاحيات ─────────────────────────
-# أسماءٌ لا أدوار. الدورُ حزمةُ صلاحيات، والشرطُ يُكتب على الصلاحية —
-# فتُضاف أدوارُ P1.2 (moderator · admin · super_admin) بتوسيع هذا الجدول
-# وحده، ولا يُمسّ موضعُ نداءٍ واحد.
-PERMISSIONS = frozenset({
-    "manage_billing",        # منحُ الاشتراكات وقبولُ إيصالٍ موثوق
-    "manage_users", "manage_roles", "view_audit_log",
-    "manage_system_settings", "manage_content", "manage_exports",
+# **اسمُ الصلاحية هو الزوجُ نفسُه**: `project.update` هي بالضبط
+# `(resource="project", action="update")`.
+#
+# ولهذا فائدةٌ لا تُقدَّر: **لا يمكن أن توجد عمليةٌ بلا صلاحية**، لأن
+# الصلاحيةَ ليست شيئًا يُكتب إلى جانب العملية بل هي اسمُها. ومسارٌ جديدٌ
+# يعلن مورِدَه وفعلَه فقد أعلن صلاحيتَه، ومن نسي أن يمنحها لدورٍ سقط في
+# `authz_test.py` لا في الإنتاج.
+#
+# والكتالوجُ **مستخرَجٌ من النظام لا مفترَض**: كلُّ سطرٍ هنا يقابل عمليةً
+# قائمةً في `falah/routing.py` — انظر `docs/P1.2_BASELINE.md §٩`.
+
+def _p(resource, action):
+    return f"{resource}.{action}"
+
+# ما يفعله من لا حسابَ له. وهذه هي حدودُ «العامّ» كلُّها، مكتوبةً في موضعٍ
+# واحدٍ يُقرأ — لا مبثوثةً في شروطٍ متفرّقة.
+ANON_PERMS = frozenset({
+    "content.read", "content.list",   # النصوص المفحوصة — عامّةٌ بطبيعة المشروع
+    "service.read",          # الحياة والجاهزية
+    "catalogue.read",        # الخطط · إعدادُ العميل · «من أنا»
+    "registration.create",   # التسجيل
+    "session.create",        # الدخول
+    "session.delete",        # الخروج — يعمل بجلسةٍ وبلا جلسة
+    "credential.update",     # نسيتُ · إعادةُ تعيين · تأكيدُ بريد
 })
 
-# دورُ اليوم الوحيد. في P1.1 يمنحه المفتاحُ الإداريّ كما كان تمامًا،
-# وفي P1.2 يُقرأ من جدولٍ في القاعدة — والفرقُ عند المنح لا عند الفحص.
+# ما يزيده صاحبُ الحساب العاديّ.
+USER_PERMS = ANON_PERMS | frozenset({
+    # القاعدةُ العامّة: صاحبُ الجلسة يبلغ ٤٠٤ على مسارٍ لا وجود له،
+    # والمجهولُ يُردّ ٤٠١ قبل ذلك. سلوكُ اليوم نفسُه، معبَّرًا عنه بصلاحية.
+    "unknown.read",
+    "account.update", "account.delete",
+    "subscription.read", "subscription.update",
+    "referral.read",
+    "limits.read",
+    "agent.read", "agent.create",
+    "project.list", "project.create",
+    "project.read", "project.update", "project.delete", "project.render",
+    "project_item.create", "project_item.update", "project_item.delete",
+    "job.list", "job.read", "job.cancel",
+    "export.list", "export_file.download",
+})
+
+# صلاحياتُ الإدارة. كلُّها مكتوبةٌ باسمها — **ولا نجمةَ ولا `admin.*`**.
+ADMIN_PERMS = frozenset({
+    "user.list",          # سردُ الحسابات
+    "user.read",          # قراءةُ حسابٍ بعينه
+    "user.update",        # إيقافٌ وإعادةُ تفعيل
+    "user_role.read",     # قراءةُ الأدوار وصلاحياتها
+    "user_role.update",   # تغييرُ دورِ حساب
+    "audit.list",         # قراءةُ سجلّ التدقيق
+    "subscription.grant", # منحُ اشتراكٍ وقبولُ إيصالٍ موثوق
+})
+
+PERMISSIONS = frozenset(USER_PERMS | ADMIN_PERMS)
+
+# ───────────────────────── الأدوار ─────────────────────────
+# **الدورُ حزمةُ صلاحياتٍ، لا شيءٌ يُفحص باسمه.** ولا يُكتب في المشروع كلِّه
+# `if role == "admin"` — يفحص ذلك `authz_test.py` على الشيفرة نفسها.
+#
+# والتعيينُ صريحٌ ومحسوبٌ بالضمّ. الترتيبُ خطّيٌّ اليوم لأن حاجةَ اليوم
+# خطّية، والبنيةُ لا تفترضه: `ROLES` قاموسُ (اسم → مجموعة)، فدورٌ جانبيٌّ
+# غيرُ خطّيّ يُضاف بلا تغييرِ منطق.
+
+_MODERATOR = USER_PERMS | {"user.list", "user.read", "audit.list"}
+_ADMIN     = _MODERATOR | {"user.update", "user_role.read", "subscription.grant"}
+_SUPER     = _ADMIN | {"user_role.update"}
+
 ROLES = {
-    "system_admin": frozenset(PERMISSIONS),
+    "anonymous":   ANON_PERMS,
+    "user":        USER_PERMS,
+    "moderator":   frozenset(_MODERATOR),
+    "admin":       frozenset(_ADMIN),
+    "super_admin": frozenset(_SUPER),
 }
 
+DEFAULT_ROLE = "user"          # افتراضيُّ كل حسابٍ جديدٍ وكل حسابٍ قائم
+ASSIGNABLE = ("user", "moderator", "admin", "super_admin")
+
+def perms_of(role):
+    """صلاحياتُ دورٍ. **دورٌ مجهولٌ ⇒ لا صلاحية** — fail closed لا fail open.
+
+    وهذا ليس احتياطًا نظريًّا: لو كُتب في القاعدة دورٌ بخطأٍ مطبعيّ، أو
+    أُسقط دورٌ من الشيفرة وبقي في صفٍّ، فالنتيجةُ منعٌ كامل لا سماحٌ كامل.
+    """
+    return ROLES.get(role or "", frozenset())
+
 class Subject:
-    """من يطلب. لا يُبنى من حمولةِ طلبٍ أبدًا — بل من جلسةٍ مُتحقَّقٍ منها."""
+    """من يطلب. لا يُبنى من حمولةِ طلبٍ أبدًا — بل من جلسةٍ مُتحقَّقٍ منها.
+
+    والدورُ يُقرأ من القاعدة مع الجلسة، ولا يُقبل من جسمِ طلبٍ ولا كعكةٍ
+    ولا ترويسة — وهذا هو الفرقُ بين نظامِ أدوارٍ ونظامٍ يبدو كذلك.
+    """
     __slots__ = ("user_id", "roles")
 
-    def __init__(self, user_id=None, roles=()):
+    def __init__(self, user_id=None, roles=("anonymous",)):
         self.user_id = int(user_id) if user_id is not None else None
-        self.roles = frozenset(roles)
+        self.roles = frozenset(roles) or frozenset({"anonymous"})
 
     @property
     def authenticated(self):
         return self.user_id is not None
 
+    @property
+    def permissions(self):
+        """اتّحادُ صلاحيات أدواره. ودورٌ مجهولٌ لا يضيف شيئًا — fail closed."""
+        out = frozenset()
+        for r in self.roles:
+            out |= perms_of(r)
+        return out
+
     def has(self, permission):
-        return any(permission in ROLES.get(r, ()) for r in self.roles)
+        return permission in self.permissions
+
+    @property
+    def role(self):
+        """الدورُ الأعلى — للعرض وللسجلّ فقط، لا يُبنى عليه قرار."""
+        return max(self.roles, key=lambda r: len(perms_of(r)), default="anonymous")
 
     def __repr__(self):
-        return f"Subject(user={self.user_id}, roles={sorted(self.roles) or '—'})"
+        return f"Subject(user={self.user_id}, roles={sorted(self.roles)})"
 
 ANON = Subject()
 
@@ -101,11 +190,12 @@ class Resource:
 
 class Decision:
     """قرارٌ يحمل سببَه. السببُ رمزٌ ثابت — تترجمه الطبقةُ الأعلى إلى ردّ."""
-    __slots__ = ("allowed", "reason", "resource", "action")
+    __slots__ = ("allowed", "reason", "resource", "action", "permission")
 
-    def __init__(self, allowed, reason, action=None, resource=None):
+    def __init__(self, allowed, reason, action=None, resource=None, permission=None):
         self.allowed, self.reason = allowed, reason
         self.action, self.resource = action, resource
+        self.permission = permission
 
     def __bool__(self):  return self.allowed
     def __repr__(self):
@@ -124,45 +214,52 @@ class Denied(Exception):
         self.decision = decision
         super().__init__(decision.reason)
 
-# ───────────────────────── الشروط ─────────────────────────
-# كلُّ شرطٍ دالّة: (subject, resource) → سببٌ أو ALLOWED.
+# ───────────────────────── النطاقات ─────────────────────────
+# بوّابةُ الصلاحية تسأل عن **الفاعل**؛ وهذه تسأل عن **هذا المورِد بعينه**.
+# وفصلُهما هو ما يمنع فوضى `if role == "admin"`: الإداريُّ يملك صلاحيةً
+# أوسعَ ونطاقًا أوسع — سطرٌ في جدول، لا شرطٌ في مئة دالّة.
 
 def PUBLIC(s, r):
+    """لا جلسةَ ولا مورِد. الصلاحيةُ وحدها تكفي (ويملكها المجهول)."""
     return ALLOWED
 
 def AUTHENTICATED(s, r):
-    return ALLOWED if s.authenticated else UNAUTHENTICATED
+    """جلسةٌ فقط — لا رقمَ مورِدٍ يأتي من الطلب أصلًا (سردٌ أو إنشاء)."""
+    return ALLOWED
 
 def OWNER(s, r):
-    """جوهرُ منع IDOR: جلسةٌ أوّلًا، ثم وجودٌ، ثم تطابقُ مالكٍ **محمَّل**."""
-    if not s.authenticated:                  return UNAUTHENTICATED
+    """جوهرُ منع IDOR: وجودٌ ثم تطابقُ مالكٍ **محمَّل من القاعدة**.
+
+    ولا دورَ يوسّع هذا. `super_admin` لا يقرأ مشروعَ غيره، لأن نطاقَ
+    `project.read` هو `OWNER` لكلِّ دور — وذلك مقصودٌ ومكتوبٌ في التصميم.
+    """
     if not r.exists or r.owner_id is None:   return NOT_FOUND
     if r.owner_id != s.user_id:              return NOT_FOUND
     return ALLOWED
 
-def NEEDS(permission):
-    """صلاحيةٌ مسمّاة. تُكتب على الصلاحية لا على الدور — انظر رأس الملفّ."""
-    def check(s, r):
-        if not s.authenticated:  return UNAUTHENTICATED
-        return ALLOWED if s.has(permission) else FORBIDDEN
-    check.__name__ = f"NEEDS({permission})"
-    return check
-
 def SELF(s, r):
     """مورِدٌ هو صاحبُ الجلسة نفسه: حسابُه، اشتراكُه، إحالاتُه."""
-    if not s.authenticated: return UNAUTHENTICATED
     if r.id is not None and int(r.id) != s.user_id: return NOT_FOUND
     return ALLOWED
 
+def ANY(s, r):
+    """مورِدٌ لا يقيّده نطاق — لمن يملك صلاحيةً إدارية.
+
+    وليس هذا تجاوزًا: البوّابةُ الأولى (الصلاحية) هي التي حسمت، وحارسُ
+    التسلسل في `may_manage` هو الذي يقيّد **مَن** يُدار. انظر §٥ من التصميم.
+    """
+    return ALLOWED
+
 # ───────────────────────── جدول السياسة ─────────────────────────
-# (نوعُ المورِد، الفعل) → الشرط. وما ليس هنا ممنوع.
+# (نوعُ المورِد، الفعل) → النطاق. وما ليس هنا ممنوع.
+# والصلاحيةُ المطلوبة تُشتقّ من المفتاح نفسه: "<مورِد>.<فعل>".
 
 POLICY = {
     # المحتوى العامّ — قراءةٌ بلا حساب، وهي طبيعةُ المشروع لا ثغرةٌ فيه
     ("content",      "read"):     PUBLIC,
     ("content",      "list"):     PUBLIC,
-    ("catalogue",    "read"):     PUBLIC,     # الخطط وإعدادُ العميل و«من أنا»
     ("service",      "read"):     PUBLIC,     # الحياة والجاهزية
+    ("catalogue",    "read"):     PUBLIC,     # الخطط وإعدادُ العميل و«من أنا»
 
     # ما يسبق الجلسة بطبيعته — لا يجوز أن يشترط جلسةً من يريد أن ينشئها
     ("registration", "create"):   PUBLIC,
@@ -193,16 +290,23 @@ POLICY = {
     ("export_file",  "download"): OWNER,
 
     # الحساب وما يتعلّق به
-    ("account",      "read"):     SELF,
     ("account",      "update"):   SELF,
     ("account",      "delete"):   SELF,
     ("subscription", "read"):     SELF,
     ("subscription", "update"):   SELF,       # الإلغاء وإيصالُ المتجر
-    ("subscription", "grant"):    NEEDS("manage_billing"),
+    ("subscription", "grant"):    ANY,        # منحةٌ إدارية — صلاحيتُها إدارية
     ("referral",     "read"):     SELF,
     ("agent",        "read"):     AUTHENTICATED,
     ("agent",        "create"):   AUTHENTICATED,
-    ("limits",       "read"):     AUTHENTICATED,   # حدودُ الطابور المعلَنة
+    ("limits",       "read"):     AUTHENTICATED,
+
+    # ═══ الإدارة — كلُّها بصلاحياتٍ مسمّاة، وبحارس تسلسلٍ فوقها ═══
+    ("user",         "list"):     AUTHENTICATED,
+    ("user",         "read"):     ANY,
+    ("user",         "update"):   ANY,
+    ("user_role",    "read"):     AUTHENTICATED,
+    ("user_role",    "update"):   ANY,
+    ("audit",        "list"):     AUTHENTICATED,
 
     # مسارُ تطبيقٍ لم يُعلَن. وثيقةٌ أوّلًا ثم ٤٠٤ من معالِجه — وهو ترتيبُ
     # اليوم نفسُه: `if not u: 401` كان يسبق «مسار غير معروف».
@@ -214,23 +318,78 @@ def can(subject, action, resource):
 
     نداءٌ صافٍ: لا يلمس قاعدةً ولا شبكة. المورِدُ يصل محمَّلًا ومالكُه
     مقروء — انظر `load` أدناه. وهذا الفصلُ مقصود: القرارُ يُختبر وحده.
+
+    **ثلاثُ بوّاباتٍ بترتيبها، وكلُّها يجب أن تُفتح:**
+
+      ① وثيقة  — مورِدٌ غيرُ عامٍّ يشترط جلسةً. (وترتيبُها أوّلًا مقصود:
+                  فالمجهولُ يُردّ ٤٠١ لا ٤٠٣، وهو سلوكُ اليوم نفسُه.)
+      ② صلاحية — هل يملك دورُ الفاعل «<مورِد>.<فعل>»؟ سؤالٌ عن الفاعل
+                  وحده، لا يعرف أيَّ مورِدٍ بعينه.
+      ③ نطاق   — وهل هذا المورِدُ **بعينه** في نطاقه؟ OWNER · SELF · ANY.
+
+    وفصلُ ② عن ③ هو ما يمنع فوضى `if role == "admin"`.
     """
     if action not in ACTIONS:
         raise ValueError(f"فعلٌ غير معروف: {action!r}")
     if subject is None:
         subject = ANON
-    rule = POLICY.get((resource.type, action))
-    if rule is None:
+    scope = POLICY.get((resource.type, action))
+    if scope is None:
         # المنعُ أصلٌ: مورِدٌ أو فعلٌ جديدٌ بلا قاعدةٍ لا يمرّ لأنه لم يُذكر
         return Decision(False, NO_POLICY, action, resource)
-    reason = rule(subject, resource)
-    return Decision(reason == ALLOWED, reason, action, resource)
+
+    permission = _p(resource.type, action)
+
+    # ① وثيقة
+    if scope is not PUBLIC and not subject.authenticated:
+        return Decision(False, UNAUTHENTICATED, action, resource, permission)
+
+    # ② صلاحية — ودورٌ مجهولٌ لا يملك شيئًا، فالنتيجةُ منعٌ لا سماح
+    if not subject.has(permission):
+        return Decision(False, FORBIDDEN, action, resource, permission)
+
+    # ③ نطاق
+    reason = scope(subject, resource)
+    return Decision(reason == ALLOWED, reason, action, resource, permission)
 
 def ensure(subject, action, resource):
     """`can` ثمّ يرفع `Denied` عند المنع. هذا ما تناديه طبقةُ الأعمال."""
     d = can(subject, action, resource)
     if not d: raise Denied(d)
     return d
+
+# ───────────────────────── حارسُ التسلسل ─────────────────────────
+# ثلاثُ قواعدَ تمنع تصعيدَ الامتياز، مكتوبةٌ **هنا** لا في المعالِجات —
+# فمن أضاف مسارَ إدارةٍ جديدًا غدًا ونسيها، سقط في `rbac_test.py`.
+
+SELF_TARGET   = "self_target"     # لا أحدَ يغيّر دورَ نفسه
+NOT_GRANTABLE = "not_grantable"   # لا تُمنح صلاحيةٌ لا تملكها
+NOT_MANAGEABLE = "not_manageable" # لا تُدار حسابٌ ليس دونك
+
+def may_manage(actor, target_role, target_id=None):
+    """أيجوز لهذا الفاعل أن **يُدير** حاملَ هذا الدور؟
+
+    ق١ — لا أحدَ يمسّ نفسَه. تمنع `user → admin`، وتمنع كذلك أن يُسقط
+         آخرُ `super_admin` نفسَه فيُقفل النظام. **ولا استثناء لأحد.**
+    ق٣ — صلاحياتُ دورِ الهدف يجب أن تكون **مجموعةً جزئيةً حقيقية** من
+         صلاحيات الفاعل. فـ`admin` لا يوقف `admin` آخر ولا `super_admin`.
+    """
+    if target_id is not None and actor.user_id is not None and int(target_id) == actor.user_id:
+        return SELF_TARGET
+    tp, ap = perms_of(target_role), actor.permissions
+    if not (tp < ap):                     # جزئيّةٌ حقيقية: لا تساوي ولا أوسع
+        return NOT_MANAGEABLE
+    return ALLOWED
+
+def may_grant(actor, new_role):
+    """أيجوز له أن يمنح هذا الدور؟
+
+    ق٢ — لا تُمنح صلاحيةٌ لا تملكها: صلاحياتُ الدور الممنوح يجب أن تكون
+         مجموعةً جزئيةً من صلاحيات الفاعل. فلا يصنع أحدٌ دورًا أقوى منه.
+    """
+    if new_role not in ROLES or new_role == "anonymous":
+        return NOT_GRANTABLE
+    return ALLOWED if perms_of(new_role) <= actor.permissions else NOT_GRANTABLE
 
 # ───────────────────────── تحميلُ المورِد ─────────────────────────
 # لكلِّ نوعٍ طريقةٌ واحدةٌ لقراءة مالكه. مكتوبةٌ هنا لا في المسارات، فلا
@@ -250,7 +409,14 @@ def _owner_job(c, jid):
     r = c.execute("SELECT user_id FROM jobs WHERE id=?", (jid,)).fetchone()
     return r[0] if r else None
 
+def _owner_user(c, uid):
+    """حسابٌ «مالكُه» هو نفسُه. يُحمَّل ليُعرف أنه موجود، لا ليُقارَن مالكُه —
+    فنطاقُ `user.read` و`user.update` هو `ANY`، وحارسُ التسلسل هو المقيِّد."""
+    r = c.execute("SELECT id FROM users WHERE id=?", (uid,)).fetchone()
+    return r[0] if r else None
+
 OWNER_OF = {
+    "user":         _owner_user,
     "project":      _owner_project,
     "project_item": _owner_item,
     "job":          _owner_job,
@@ -310,11 +476,22 @@ def export_file(root_dir, rel_path):
 
 # ───────────────────────── الأدوار من مصدرها ─────────────────────────
 
-def roles_for(user_id, *, admin_key_ok=False):
-    """أدوارُ صاحب الجلسة. في P1.1 مصدرٌ واحد: المفتاحُ الإداريّ — كما كان
-    حرفًا بحرف. وP1.2 يضيف قراءةً من القاعدة هنا، ولا شيءَ غير هذا يتغيّر.
-    """
-    return frozenset({"system_admin"}) if admin_key_ok else frozenset()
+def roles_for(user):
+    """أدوارُ صاحب الجلسة — **من القاعدة وحدها**.
 
-def subject_for(user_id, *, admin_key_ok=False):
-    return Subject(user_id, roles_for(user_id, admin_key_ok=admin_key_ok))
+    `user` هو صفُّ المستخدم كما قرأته الجلسة، لا شيءٌ جاء من العميل. ولا
+    ترويسةَ ولا كعكةَ ولا حقلَ جسمٍ يدخل هنا بحال.
+
+    ودورٌ لا تعرفه `ROLES` (خطأٌ مطبعيّ في القاعدة، أو دورٌ أُسقط من
+    الشيفرة وبقي في صفّ) يُعطي **صفرَ صلاحيات** لا صلاحياتِ مستخدم:
+    fail closed. ولذلك يُردّ الدورُ كما هو ولا يُستبدل بالافتراضيّ.
+    """
+    if not user: return frozenset({"anonymous"})
+    role = (user.get("role") if isinstance(user, dict) else user["role"]) or ""
+    return frozenset({"anonymous", role})
+
+def subject_for(user):
+    """الفاعلُ كما تراه طبقةُ الإذن. لا يُبنى إلا من جلسةٍ مُتحقَّقٍ منها."""
+    if not user: return ANON
+    uid = user["id"] if not isinstance(user, dict) else user.get("id")
+    return Subject(uid, roles_for(user))
