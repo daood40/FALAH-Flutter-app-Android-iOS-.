@@ -52,6 +52,9 @@
 | GET | `/app/plans` | عامّ | — | الخطط وما لا يُباع | — |
 | GET | `/app/projects` | جلسة | — | مشاريع صاحب الجلسة | 401 |
 | GET | `/app/projects/{id}` | جلسة+ملكية | — | المشروع بعناصره مفحوصةً الآن | 401 · 400 ليس مشروعك |
+| GET | `/app/publish/accounts` | مصادَق | — | الحساباتُ المربوطة — بلا أسرار، تلميحٌ من أربعةِ محارف | — |
+| GET | `/app/publish/attempts` | مصادَق | — | سجلُّ محاولات النشر — بلا أسرار | — |
+| GET | `/app/publish/providers` | مصادَق | — | كلُّ منصّةٍ بحالتها: ready | not_implemented | — |
 | GET | `/app/referrals` | جلسة | — | رمز الإحالة وحصادها | 401 |
 | GET | `/app/schedules` | جلسة | — | {schedules[]} | 401 |
 | GET | `/app/schedules/{id}` | جلسة · مالكٌ | — | {schedule, runs[]} — تاريخُ التنفيذ لا آخرُ قيمة | 401 · 404 |
@@ -80,6 +83,8 @@
 | POST | `/app/projects/create` | جلسة+CSRF | title, kind, skin, ratio, watermark | 201 {id} | 400 حصّة المشاريع |
 | POST | `/app/projects/delete` | جلسة+ملكية | id | {ok} | 400 |
 | POST | `/app/projects/update` | جلسة+ملكية | id + الحقول | {ok} | 400 |
+| POST | `/app/publish/connect` | مصادَق | provider, secret, label | الحسابُ المربوط + تلميح | 400 منصّةٌ غيرُ منفَّذةٍ أو اعتمادٌ قصير |
+| POST | `/app/publish/disconnect` | مالك | account | {disconnected} | 404 ليس حسابَك |
 | POST | `/app/register` | عامّ+CSRF | email, password, name, watermark, invite, ref | 201 {user, entitlements} | 400 · 403 دعوة |
 | POST | `/app/schedules/create` | جلسة · مالكُ المشروع | project, kind, title, recurrence, tz, at_minute, day_of | {schedule} — الجدولةُ في الخادم لا في العميل، و`tz` اسمُ منطقةٍ لا إزاحةٌ تنزاح بالتوقيت الصيفيّ | 400 · 401 · 404 |
 | POST | `/app/schedules/delete` | جلسة · مالك | id | {deleted} | 401 · 404 |

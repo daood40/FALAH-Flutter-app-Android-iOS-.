@@ -112,7 +112,11 @@ def _owner_scope():
                 # و`schedule.create` ليست هنا عمدًا — نطاقُها المشروعُ لا
                 # الجدول: لا جدولَ بعدُ ليُملَك، والمحروسُ أن يكون المشروعُ لك.
                 ("schedule", "read"), ("schedule", "update"),
-                ("schedule", "delete")}
+                ("schedule", "delete"),
+                # النشر: الفصلُ ملكيّةٌ صريحة — حسابُ غيرك لا تفصله.
+                # و`publish_account.create` ليست هنا عمدًا: لا حسابَ بعدُ
+                # ليُملَك، والحارسُ أنّ الرابطَ مصادَقٌ ويربط لنفسه.
+                ("publish_account", "delete")}
     drift = sorted(set(owned) ^ EXPECTED)
     return not bad and not drift, \
         f"{len(owned)} زوجًا بنطاق OWNER · انحراف={drift} · خروق={bad[:4]}"

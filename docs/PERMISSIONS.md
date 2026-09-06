@@ -2,7 +2,7 @@
 
 > مولَّدٌ من الشيفرة بـ`python3 perms_report.py`. **لا يُحرَّر باليد.**
 
-**44 صلاحيةً ⟷ 44 زوجًا (مورِد، فعل)** — تقابلٌ تامٌّ في الاتجاهين. واسمُ الصلاحية هو الزوجُ نفسُه، فلا يمكن أن توجد عمليةٌ بلا صلاحية.
+**48 صلاحيةً ⟷ 48 زوجًا (مورِد، فعل)** — تقابلٌ تامٌّ في الاتجاهين. واسمُ الصلاحية هو الزوجُ نفسُه، فلا يمكن أن توجد عمليةٌ بلا صلاحية.
 
 ## النطاقات
 
@@ -47,6 +47,10 @@
 | `project_item.create` | project_item | create | `OWNER` | `user` | — | — | `POST /app/items/add` |
 | `project_item.delete` | project_item | delete | `OWNER` | `user` | — | — | `POST /app/items/remove` |
 | `project_item.update` | project_item | update | `OWNER` | `user` | — | — | `POST /app/items/reorder` · `POST /app/items/accept-drift` |
+| `publish_account.create` | publish_account | create | `AUTH` | `user` | — | — | `POST /app/publish/connect` |
+| `publish_account.delete` | publish_account | delete | `OWNER` | `user` | — | — | `POST /app/publish/disconnect` |
+| `publish_account.list` | publish_account | list | `AUTH` | `user` | — | — | `GET /app/publish/providers` · `GET /app/publish/accounts` |
+| `publish_attempt.list` | publish_attempt | list | `AUTH` | `user` | — | — | `GET /app/publish/attempts` |
 | `referral.read` | referral | read | `SELF` | `user` | — | — | `GET /app/referrals` |
 | `registration.create` | registration | create | `PUBLIC` | `anonymous` | ✔ `account.created` | `register` (قبليّ · لكل عنوان) | `POST /app/register` |
 | `schedule.create` | schedule | create | `AUTH` | `user` | — | — | `POST /app/schedules/create` |
@@ -72,10 +76,10 @@
 | الدور | عددُ الصلاحيات | ما يزيده على ما قبله |
 |---|---:|---|
 | `anonymous` | 8 | `catalogue.read` · `content.list` · `content.read` · `credential.update` · `registration.create` · `service.read` · `session.create` · `session.delete` |
-| `user` | 36 | `account.delete` · `account.update` · `agent.create` · `agent.read` · `export.list` · `export_file.download` · `job.cancel` · `job.list` · `job.read` · `limits.read` · `project.create` · `project.delete` · `project.list` · `project.read` · `project.render` · `project.update` · `project_item.create` · `project_item.delete` · `project_item.update` · `referral.read` · `schedule.create` · `schedule.delete` · `schedule.list` · `schedule.read` · `schedule.update` · `subscription.read` · `subscription.update` · `unknown.read` |
-| `moderator` | 40 | `audit.list` · `metrics.read` · `user.list` · `user.read` |
-| `admin` | 43 | `subscription.grant` · `user.update` · `user_role.read` |
-| `super_admin` | 44 | `user_role.update` |
+| `user` | 40 | `account.delete` · `account.update` · `agent.create` · `agent.read` · `export.list` · `export_file.download` · `job.cancel` · `job.list` · `job.read` · `limits.read` · `project.create` · `project.delete` · `project.list` · `project.read` · `project.render` · `project.update` · `project_item.create` · `project_item.delete` · `project_item.update` · `publish_account.create` · `publish_account.delete` · `publish_account.list` · `publish_attempt.list` · `referral.read` · `schedule.create` · `schedule.delete` · `schedule.list` · `schedule.read` · `schedule.update` · `subscription.read` · `subscription.update` · `unknown.read` |
+| `moderator` | 44 | `audit.list` · `metrics.read` · `user.list` · `user.read` |
+| `admin` | 47 | `subscription.grant` · `user.update` · `user_role.read` |
+| `super_admin` | 48 | `user_role.update` |
 
 ## ما يفحصه هذا الجدولُ آليًّا
 

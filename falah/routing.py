@@ -22,13 +22,15 @@
 """
 from falah import app_routes as R, audit as AUD, auth, authz as AZ, billing
 from falah import jobs as JB, projects as P, ratelimit as RL, referrals as REF
+from falah import publishing as PUB
 from falah import schedules as SCH
 from falah.web import Response
 
 # أخطاءُ النطاق التي تعني «طلبُك خاطئ» لا «الخادمُ معطوب». تُجمع هنا لأن
 # طبقةَ HTTP لا ينبغي أن تعرف أسماءَ وحدات النطاق واحدةً واحدة.
 DOMAIN_ERRORS = (P.ProjectError, auth.AuthError, billing.BillingError,
-                 REF.ReferralError, JB.JobError, SCH.ScheduleError)
+                 REF.ReferralError, JB.JobError, SCH.ScheduleError,
+                 PUB.PublishError)
 
 # ───────────────────────── أنواع الحقول ─────────────────────────
 # تُقيَّم بالترتيب المكتوب، فيظهر الخطأُ الأوّل كما كان يظهر.
@@ -80,6 +82,15 @@ GET = [
     _r("GET", "/app/jobs",         R.jobs,         resource="job", action="list"),
     _r("GET", "/app/exports",      R.exports,      resource="export", action="list"),
     _r("GET", "/app/schedules",    R.schedules_list, resource="schedule", action="list"),
+    # النشر: الكتالوجُ عامٌّ للمصادَقين — ليعرف المستخدمُ ما يُنتظر منه
+    _r("GET", "/app/publish/providers", R.publish_providers,
+       resource="publish_account", action="list",
+       note="الحالةُ الصريحةُ لكلِّ منصّة — لا يُدَّعى دعمٌ بلا تكامل"),
+    _r("GET", "/app/publish/accounts",  R.publish_accounts,
+       resource="publish_account", action="list",
+       note="أعمدةٌ مسمّاةٌ بلا secret_sealed — لا سرَّ يخرج في سرد"),
+    _r("GET", "/app/publish/attempts",  R.publish_attempts,
+       resource="publish_attempt", action="list"),
     _r("GET", "/app/file",         R.file_get,     resource="export_file",
        action="download", rate=("file", "user"),
        note="الحدُّ قبليٌّ: التنزيل رخيصٌ لكنّه كثير"),
@@ -183,6 +194,14 @@ POST = [
     _r("POST", "/app/schedules/status", R.schedule_status,
        resource="schedule", action="update", owner_field="schedule",
        fields=(("schedule", "id", INT), ("status", "status", RAW))),
+    _r("POST", "/app/publish/connect", R.publish_connect,
+       resource="publish_account", action="create",
+       note="السرُّ يدخل مرّةً فيُغلَّف — ولا يُعاد بعدها أبدًا"),
+    _r("POST", "/app/publish/disconnect", R.publish_disconnect,
+       resource="publish_account", action="delete", owner_field="account",
+       fields=(("account", "id", INT),),
+       note="الملكيّةُ تُفحص هنا وفي publishing.py — طبقتان لا واحدة"),
+
     _r("POST", "/app/schedules/delete", R.schedule_delete,
        resource="schedule", action="delete", owner_field="schedule",
        fields=(("schedule", "id", INT),)),

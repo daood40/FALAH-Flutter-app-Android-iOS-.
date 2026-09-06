@@ -105,6 +105,49 @@ class ApiClient {
         ),
       );
 
+  /// **مساراتُ المحتوى تردّ مصفوفةً في الجذر، لا كائنًا.**
+  ///
+  /// `/quran/search` و`/hadith/search` و`/sources` تردّ `[...]`. و`get`
+  /// أعلاه يقبل الكائنَ وحدَه ويصنّف المصفوفةَ «ردًّا غيرَ مفهوم» — فكانت
+  /// كلُّ شاشةِ تصفّحٍ ستُظهر خطأً غامضًا على ردٍّ سليمٍ تمامًا.
+  ///
+  /// وهذا من صنف العيب الذي أمسكه عقدُ المحوِّل من قبل: أن يُفترض شكلُ
+  /// الردّ بدل أن يُقرأ. فيُصرَّح بالحالتين ولا يُخمَّن.
+  Future<Result<List<dynamic>>> getList(
+    String path, {
+    Json? query,
+    CancelToken? cancel,
+  }) async {
+    try {
+      final r = await _dio.get(
+        path,
+        queryParameters: query,
+        cancelToken: cancel,
+        options: _opts(),
+      );
+      final rid = r.requestOptions.headers['X-Request-Id'] as String?;
+      final code = r.statusCode ?? 0;
+      if (code >= 200 && code < 300) {
+        final d = r.data;
+        if (d is List) return Ok(d);
+        // بعضُ المسارات تُغلّف المصفوفةَ في مفتاح؛ يُقبل الشكلان صراحةً
+        if (d is Map) {
+          for (final v in d.values) {
+            if (v is List) return Ok(v);
+          }
+        }
+        Log.error('response.shape.list', {'code': code, 'request_id': rid});
+        return const Err(UnknownFailure('ردٌّ غيرُ مفهوم من الخادم'));
+      }
+      return Err(_classify(code, r, rid));
+    } on DioException catch (e) {
+      return Err(_fromDio(e));
+    } catch (e) {
+      Log.error('request.unexpected', {'type': e.runtimeType.toString()});
+      return const Err(UnknownFailure());
+    }
+  }
+
   Options _opts() => Options(headers: {'X-Request-Id': newRequestId()});
 
   Future<Result<Json>> _send(Future<Response<dynamic>> Function() run) async {

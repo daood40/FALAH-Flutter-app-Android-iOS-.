@@ -9,14 +9,17 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/errors/failure.dart';
+import '../../core/routing/app_router.dart';
 import '../../core/theme/tokens.dart';
 import '../../core/utils/arabic.dart';
 import '../../domain/entities/project.dart';
 import '../../shared/widgets/states.dart';
 import '../home/home_controller.dart';
 import '../providers.dart';
+import '../schedule/schedules_screen.dart';
 import 'export_controller.dart';
 
 class ProjectScreen extends ConsumerWidget {
@@ -28,7 +31,42 @@ class ProjectScreen extends ConsumerWidget {
     final detail = ref.watch(projectDetailProvider(projectId));
 
     return Scaffold(
-      appBar: AppBar(title: Text(detail.value?.title ?? 'المشروع')),
+      appBar: AppBar(
+        title: Text(detail.value?.title ?? 'المشروع'),
+        actions: [
+          IconButton(
+            tooltip: 'أضِف نصًّا',
+            icon: const Icon(Icons.add),
+            onPressed: () async {
+              await context.push(Routes.browseFor(projectId));
+              // العودةُ من التصفّح تعني احتمالَ إضافةٍ — يُعاد التحميل
+              // بلا أن تحمل الشاشتان حالةً مشتركة
+              ref.invalidate(projectDetailProvider(projectId));
+            },
+          ),
+          IconButton(
+            tooltip: 'جدولةُ التصدير',
+            icon: const Icon(Icons.schedule_outlined),
+            onPressed: detail.value == null
+                ? null
+                : () async {
+                    final ok = await showModalBottomSheet<bool>(
+                      context: context,
+                      isScrollControlled: true,
+                      builder: (_) =>
+                          ScheduleCreateSheet(project: detail.value!),
+                    );
+                    if (ok == true && context.mounted) {
+                      ScaffoldMessenger.of(context)
+                        ..hideCurrentSnackBar()
+                        ..showSnackBar(
+                          const SnackBar(content: Text('أُنشئ الجدول')),
+                        );
+                    }
+                  },
+          ),
+        ],
+      ),
       body: detail.when(
         loading: () => const LoadingView(),
         error: (e, _) => ErrorView(

@@ -21,7 +21,8 @@ import json, os
 
 from falah import obs, audit as AUD, auth, authz as AZ, billing
 from falah import jobs as JB, projects as P, ratelimit as RL
-from falah import referrals as REF, schedules as SCH, settings as S, store
+from falah import publishing as PUB, referrals as REF, schedules as SCH
+from falah import settings as S, store
 from falah.web import Response
 
 # ═══════════════════ القراءة ═══════════════════
@@ -540,3 +541,37 @@ def schedule_status(rq):
 def schedule_delete(rq):
     SCH.delete(rq.c, rq.uid, rq.params["schedule"])
     return Response({"deleted": True})
+
+
+# ═══════════════════ النشر ═══════════════════
+# القاعدةُ التي تحكم هذه المسارات: **لا يخرج سرٌّ منها بحال.** يدخل رمزُ
+# البوت مرّةً في `connect` فيُغلَّف، ولا يُعاد بعدها أبدًا — لا في سردٍ ولا
+# في قراءةِ حساب. وأقصى ما يعرفه العميلُ آخرُ أربعةِ محارف.
+
+def publish_providers(rq):
+    """المنصّاتُ بحالتها الصريحة — المنفَّذُ وغيرُ المنفَّذ معًا.
+
+    عرضُ المنفَّذِ وحدَه يُخفي الخريطةَ فيسأل المستخدمُ عن غيابِ إنستغرام،
+    وعرضُ الكلِّ كأنه جاهزٌ كذب. فتُعرض الحالةُ باسمها.
+    """
+    return Response({"providers": PUB.catalogue()})
+
+
+def publish_accounts(rq):
+    return Response({"accounts": PUB.accounts(rq.c, rq.uid)})
+
+
+def publish_connect(rq):
+    b = rq.body
+    acc = PUB.connect(rq.c, rq.uid, b.get("provider", ""),
+                      secret=b.get("secret", ""), label=b.get("label", ""))
+    return Response({"account": acc}, 201)
+
+
+def publish_disconnect(rq):
+    PUB.disconnect(rq.c, rq.uid, rq.params["account"])
+    return Response({"disconnected": True})
+
+
+def publish_attempts(rq):
+    return Response({"attempts": PUB.attempts(rq.c, rq.uid)})

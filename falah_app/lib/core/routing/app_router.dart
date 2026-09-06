@@ -17,10 +17,14 @@ import 'package:go_router/go_router.dart';
 
 import '../../presentation/auth/auth_controller.dart';
 import '../../presentation/auth/login_screen.dart';
+import '../../presentation/agent/agent_screen.dart';
 import '../../presentation/auth/register_screen.dart';
+import '../../presentation/browse/browse_screen.dart';
 import '../../presentation/home/home_screen.dart';
 import '../../presentation/profile/profile_screen.dart';
 import '../../presentation/project/project_screen.dart';
+import '../../presentation/publish/publish_screen.dart';
+import '../../presentation/schedule/schedules_screen.dart';
 import '../../presentation/settings/settings_screen.dart';
 import '../../presentation/splash/splash_screen.dart';
 import '../../presentation/subscription/plans_screen.dart';
@@ -35,8 +39,19 @@ final class Routes {
   static const profile = '/profile';
   static const plans = '/plans';
   static const settings = '/settings';
+  static const browse = '/browse';
+  static const agent = '/agent';
+  static const schedules = '/schedules';
+  static const publish = '/publish';
 
   static String projectOf(int id) => '/project/$id';
+
+  /// إضافةٌ إلى مشروعٍ بعينه: `/browse?project=7`
+  static String browseFor(int projectId) => '/browse?project=$projectId';
+
+  /// ينتقل إلى مشروعٍ بلا أن تعرف الشاشةُ الداعيةُ شكلَ المسار.
+  static void goProject(BuildContext context, int id) =>
+      GoRouter.of(context).go(projectOf(id));
 }
 
 /// المساراتُ التي لا تحتاج جلسة. ما عداها محميّ — **والمنعُ أصلٌ**:
@@ -117,6 +132,26 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: Routes.settings,
         builder: (context, state) => const SettingsScreen(),
+      ),
+      GoRoute(
+        path: Routes.browse,
+        builder: (_, s) => BrowseScreen(
+          // مشروعٌ غيرُ صالحٍ في الاستعلام يُقرأ «بلا مشروع» فتبقى الشاشةُ
+          // للقراءة — ولا يُعرض زرُّ إضافةٍ إلى مشروعٍ لا وجودَ له
+          projectId: int.tryParse(s.uri.queryParameters['project'] ?? ''),
+        ),
+      ),
+      GoRoute(
+        path: Routes.agent,
+        builder: (context, state) => const AgentScreen(),
+      ),
+      GoRoute(
+        path: Routes.schedules,
+        builder: (context, state) => const SchedulesScreen(),
+      ),
+      GoRoute(
+        path: Routes.publish,
+        builder: (context, state) => const PublishScreen(),
       ),
     ],
     errorBuilder: (_, s) => _BadRoute('مسارٌ غيرُ معروف: ${s.uri.path}'),

@@ -88,3 +88,11 @@ final class UnknownFailure extends Failure {
     String? requestId,
   ]) : super(requestId: requestId);
 }
+
+/// يحوّل ما يخرج من `AsyncValue.error` إلى `Failure` مصنَّف.
+///
+/// مزوِّداتُ Riverpod ترمي الخطأَ كـ`Object`، وشاشاتُنا تعرض `Failure`.
+/// وبلا هذه الدالّة يكتب كلُّ `error:` تحويلًا يدويًّا — فيُنسى في واحدةٍ
+/// منها فتظهر `Instance of 'DioException'` للمستخدم.
+Failure asFailure(Object e) =>
+    e is Failure ? e : UnknownFailure(e.toString().split('\n').first);

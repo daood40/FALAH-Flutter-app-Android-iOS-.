@@ -29,6 +29,21 @@ class HomeScreen extends ConsumerWidget {
         title: const Text('فَلاح'),
         actions: [
           IconButton(
+            onPressed: () => context.push(Routes.browse),
+            icon: const Icon(Icons.search),
+            tooltip: 'تصفّح',
+          ),
+          IconButton(
+            onPressed: () => context.push(Routes.schedules),
+            icon: const Icon(Icons.schedule_outlined),
+            tooltip: 'الجدولة',
+          ),
+          IconButton(
+            onPressed: () => context.push(Routes.publish),
+            icon: const Icon(Icons.send_outlined),
+            tooltip: 'النشر',
+          ),
+          IconButton(
             onPressed: () => context.push(Routes.plans),
             icon: const Icon(Icons.workspace_premium_outlined),
             tooltip: 'الخطط',
@@ -45,12 +60,28 @@ class HomeScreen extends ConsumerWidget {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _createProject(context, ref),
-        icon: const Icon(Icons.add),
-        label: const Text('مشروع جديد'),
-        backgroundColor: Palette.gold,
-        foregroundColor: Palette.ink,
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          // الوكيلُ أسرعُ طريقٍ إلى سلسلةٍ كاملة، فيُعرض بجوار الإنشاء
+          // اليدويّ لا مدفونًا في قائمة.
+          FloatingActionButton.small(
+            heroTag: 'agent',
+            onPressed: () => context.push(Routes.agent),
+            tooltip: 'الوكيل',
+            child: const Icon(Icons.auto_awesome),
+          ),
+          const SizedBox(height: Space.sm),
+          FloatingActionButton.extended(
+            heroTag: 'create',
+            onPressed: () => _createProject(context, ref),
+            icon: const Icon(Icons.add),
+            label: const Text('مشروع جديد'),
+            backgroundColor: Palette.gold,
+            foregroundColor: Palette.ink,
+          ),
+        ],
       ),
       body: RefreshIndicator(
         onRefresh: () async {

@@ -88,6 +88,9 @@ USER_PERMS = ANON_PERMS | frozenset({
     "job.list", "job.read", "job.cancel",
     "schedule.list", "schedule.read", "schedule.create",
     "schedule.update", "schedule.delete",
+    # النشر: الحسابُ المربوط سرٌّ لصاحبه — ولا يُقرأ ولا يُفصل إلا هو
+    "publish_account.list", "publish_account.create", "publish_account.delete",
+    "publish_attempt.list",
     "export.list", "export_file.download",
 })
 
@@ -298,6 +301,10 @@ POLICY = {
     ("schedule",     "create"):   AUTHENTICATED,
     ("schedule",     "update"):   OWNER,
     ("schedule",     "delete"):   OWNER,
+    ("publish_account", "list"):   AUTHENTICATED,
+    ("publish_account", "create"): AUTHENTICATED,
+    ("publish_account", "delete"): OWNER,
+    ("publish_attempt", "list"):   AUTHENTICATED,
 
     # الملفّات المصدَّرة
     ("export",       "list"):     AUTHENTICATED,
@@ -432,6 +439,11 @@ def _owner_user(c, uid):
     r = c.execute("SELECT id FROM users WHERE id=?", (uid,)).fetchone()
     return r[0] if r else None
 
+def _owner_publish_account(c, aid):
+    r = c.execute("SELECT user_id FROM publish_accounts WHERE id=?",
+                  (aid,)).fetchone()
+    return r[0] if r else None
+
 def _owner_schedule(c, sid):
     r = c.execute("SELECT user_id FROM schedules WHERE id=?", (sid,)).fetchone()
     return r[0] if r else None
@@ -439,6 +451,7 @@ def _owner_schedule(c, sid):
 OWNER_OF = {
     "user":         _owner_user,
     "schedule":     _owner_schedule,
+    "publish_account": _owner_publish_account,
     "project":      _owner_project,
     "project_item": _owner_item,
     "job":          _owner_job,
