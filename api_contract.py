@@ -134,6 +134,22 @@ SPEC = {
                         "{roles, assignable, permissions}", "401 · 403"),
   "/app/admin/audit":  ("GET", "صلاحية audit.list", "limit, offset, action, actor, result",
                         "{total, events[]} — وقراءتُه نفسُها تُسجَّل", "401 · 403"),
+  "/app/schedules":    ("GET", "جلسة", "—", "{schedules[]}", "401"),
+  "/app/schedules/{id}": ("GET", "جلسة · مالكٌ", "—",
+                        "{schedule, runs[]} — تاريخُ التنفيذ لا آخرُ قيمة",
+                        "401 · 404"),
+  "/app/schedules/create": ("POST", "جلسة · مالكُ المشروع",
+                        "project, kind, title, recurrence, tz, at_minute, day_of",
+                        "{schedule} — الجدولةُ في الخادم لا في العميل، و`tz` "
+                        "اسمُ منطقةٍ لا إزاحةٌ تنزاح بالتوقيت الصيفيّ",
+                        "400 · 401 · 404"),
+  "/app/schedules/update": ("POST", "جلسة · مالك", "id + الحقولُ المعدَّلة",
+                        "{schedule} — ويُعاد حسابُ الاستحقاق", "400 · 401 · 404"),
+  "/app/schedules/status": ("POST", "جلسة · مالك", "id, status=active|paused",
+                        "{schedule} — والاستئنافُ من الآن لا من الماضي",
+                        "400 · 401 · 404"),
+  "/app/schedules/delete": ("POST", "جلسة · مالك", "id", "{deleted}",
+                        "401 · 404"),
   "/app/admin/metrics": ("GET", "صلاحية metrics.read", "—",
                         "{uptime_s, counters[], timers[], queue} — لقطةٌ من "
                         "الذاكرة. الوسومُ معدودةٌ مسبقًا (مسارٌ مُعمَّمٌ · طريقةٌ · "

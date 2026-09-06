@@ -168,12 +168,83 @@ def m005_roles_and_audit(c):
       BEGIN SELECT RAISE(ABORT, 'audit_logs is append-only'); END;
     """)
 
+
+def m006_schedules(c):
+    """الجدولة — **إضافةٌ محضة**: جدولان جديدان وفهارس، بلا مساسِ صفّ.
+
+    والقرارُ الحاسمُ في التصميم: **الجدولةُ في الخادم لا في العميل.**
+    مؤقّتٌ داخل التطبيق يموت بإغلاقه، ولا يعمل والهاتفُ نائم، ويختلف
+    توقيتُه بين جهازٍ وجهاز. فالحالةُ هنا، والعاملُ ينفّذ.
+
+    وحقلُ `tz` نصٌّ لا إزاحةٌ رقميّة: الإزاحةُ تتغيّر بالتوقيت الصيفيّ،
+    فمن جدول «كلَّ يومٍ ٦ صباحًا» بإزاحةٍ محفوظةٍ استيقظ على ٥ أو ٧ بعد
+    التحويل. واسمُ المنطقة يبقى صحيحًا عبر التحويلات.
+
+    و`next_run_at` محسوبٌ ومخزَّن: البحثُ عن «ما استحقّ» يصير فهرسًا لا
+    مسحًا لكلِّ جدولٍ في القاعدة.
+
+    و`idem_key` يمنع التنفيذَ المزدوج: تشغيلان متزامنان للكانس لا
+    يُنشئان مهمّتين — القيدُ الفريدُ يمنع الثانية.
+    """
+    c.executescript("""
+      CREATE TABLE IF NOT EXISTS schedules(
+        id           INTEGER PRIMARY KEY,
+        user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        project_id   INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        kind         TEXT    NOT NULL DEFAULT 'export',
+        title        TEXT    NOT NULL DEFAULT '',
+        -- 'once' مرّةً واحدة · 'daily' · 'weekly' · 'monthly'
+        recurrence   TEXT    NOT NULL DEFAULT 'once',
+        -- اسمُ منطقةٍ زمنيّة (Africa/Tripoli) لا إزاحة — انظر شرحَ الدالّة
+        tz           TEXT    NOT NULL DEFAULT 'UTC',
+        -- دقائقُ من منتصف ليل المنطقة، ٠–١٤٣٩
+        at_minute    INTEGER NOT NULL DEFAULT 0,
+        -- ٠=الاثنين … ٦=الأحد (weekly) · ١–٢٨ (monthly)
+        day_of       INTEGER,
+        status       TEXT    NOT NULL DEFAULT 'active',
+        next_run_at  INTEGER,
+        last_run_at  INTEGER,
+        runs         INTEGER NOT NULL DEFAULT 0,
+        failures     INTEGER NOT NULL DEFAULT 0,
+        created_at   INTEGER NOT NULL,
+        updated_at   INTEGER NOT NULL,
+        CHECK (recurrence IN ('once','daily','weekly','monthly')),
+        CHECK (status     IN ('active','paused','done','failed')),
+        CHECK (at_minute >= 0 AND at_minute < 1440),
+        CHECK (kind       IN ('export','video'))
+      );
+      CREATE INDEX IF NOT EXISTS ix_sched_due
+        ON schedules(status, next_run_at);
+      CREATE INDEX IF NOT EXISTS ix_sched_user
+        ON schedules(user_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS ix_sched_project ON schedules(project_id);
+
+      -- سجلُّ التنفيذ: لماذا لا يكفي عمودٌ في `schedules`؟ لأن السؤالَ
+      -- «متى فشل ولماذا» يحتاج تاريخًا لا آخرَ قيمة.
+      CREATE TABLE IF NOT EXISTS schedule_runs(
+        id          INTEGER PRIMARY KEY,
+        schedule_id INTEGER NOT NULL REFERENCES schedules(id) ON DELETE CASCADE,
+        at          INTEGER NOT NULL,
+        job_id      INTEGER,
+        result      TEXT    NOT NULL,
+        error       TEXT,
+        idem_key    TEXT    NOT NULL,
+        CHECK (result IN ('queued','skipped','failed'))
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS ux_srun_idem
+        ON schedule_runs(idem_key);
+      CREATE INDEX IF NOT EXISTS ix_srun_sched
+        ON schedule_runs(schedule_id, at DESC);
+    """)
+
+
 MIGRATIONS = [
     (1, "jobs_queue",        False, m001_jobs_queue),
     (2, "jobs_idempotency",  False, m002_jobs_idempotency),
     (3, "jobs_state_guard",  True,  m003_jobs_state_guard),
     (4, "jobs_index_names",  False, m004_jobs_index_names),
     (5, "roles_and_audit",   False, m005_roles_and_audit),
+    (6, "schedules",         False, m006_schedules),
 ]
 
 # ═══════════ المشغّل ═══════════

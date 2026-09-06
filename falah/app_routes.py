@@ -21,7 +21,7 @@ import json, os
 
 from falah import obs, audit as AUD, auth, authz as AZ, billing
 from falah import jobs as JB, projects as P, ratelimit as RL
-from falah import referrals as REF, settings as S, store
+from falah import referrals as REF, schedules as SCH, settings as S, store
 from falah.web import Response
 
 # ═══════════════════ القراءة ═══════════════════
@@ -499,3 +499,44 @@ def metrics(rq):
     snap = obs.M.snapshot()
     snap["queue"] = JB.stats(rq.c)
     return Response(snap, 200)
+
+
+# ═══════════════════ الجدولة ═══════════════════
+# القاعدة: الملكيّةُ تُفحص في `schedules.py` نفسِه — لا هنا ولا في الجدول
+# وحده. طبقتان لا واحدة: النطاقُ يحرس نفسَه ولو نُودي من مكانٍ آخر.
+
+def schedules_list(rq):
+    return Response({"schedules": SCH.listing(rq.c, rq.uid)})
+
+
+def schedule_get(rq):
+    return Response({"schedule": SCH.get(rq.c, rq.uid, rq.params["schedule"]),
+                     "runs": SCH.runs(rq.c, rq.uid, rq.params["schedule"])})
+
+
+def schedule_create(rq):
+    b = rq.body
+    return Response({"schedule": SCH.create(
+        rq.c, rq.uid, rq.params["project"],
+        kind=b.get("kind", "export"), title=b.get("title", ""),
+        recurrence=b.get("recurrence", "once"), tz=b.get("tz", "UTC"),
+        at_minute=int(b.get("at_minute", 0)), day_of=b.get("day_of"))}, 201)
+
+
+def schedule_update(rq):
+    b = rq.body
+    return Response({"schedule": SCH.update(
+        rq.c, rq.uid, rq.params["schedule"],
+        title=b.get("title"), recurrence=b.get("recurrence"), tz=b.get("tz"),
+        at_minute=b.get("at_minute"), day_of=b.get("day_of"),
+        kind=b.get("kind"))})
+
+
+def schedule_status(rq):
+    return Response({"schedule": SCH.set_status(
+        rq.c, rq.uid, rq.params["schedule"], rq.params["status"])})
+
+
+def schedule_delete(rq):
+    SCH.delete(rq.c, rq.uid, rq.params["schedule"])
+    return Response({"deleted": True})

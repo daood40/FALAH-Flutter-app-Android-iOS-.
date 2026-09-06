@@ -100,10 +100,19 @@ def _owner_scope():
     # المجموعةُ **مثبَّتةٌ بالاسم** لا بعددٍ أدنى: تضييقُها يعني مورِدًا خرج
     # من حراسة الملكية، وتوسيعُها يعني نطاقًا تغيّر. وكلاهما قرارٌ يجب أن
     # يظهر في الفرق لا أن يمرّ صامتًا.
+    # المجموعةُ مثبَّتةٌ بالاسم لا بالعدد: إضافةُ زوجٍ بنطاق OWNER **يجب**
+    # أن تُسقط هذا الثابتَ حتى يُحدَّث هنا بوعي. وقد سقط فعلًا حين أُضيفت
+    # الجدولةُ — وهذا هو المقصود: تغييرٌ في حدود الملكيّة يظهر في الفرق
+    # ولا يمرّ صامتًا.
     EXPECTED = {("project", "read"), ("project", "update"), ("project", "delete"),
                 ("project", "render"), ("project_item", "create"),
                 ("project_item", "update"), ("project_item", "delete"),
-                ("job", "read"), ("job", "cancel"), ("export_file", "download")}
+                ("job", "read"), ("job", "cancel"), ("export_file", "download"),
+                # الجدولة: القراءةُ والتعديلُ والحذفُ ملكيّةٌ صريحة.
+                # و`schedule.create` ليست هنا عمدًا — نطاقُها المشروعُ لا
+                # الجدول: لا جدولَ بعدُ ليُملَك، والمحروسُ أن يكون المشروعُ لك.
+                ("schedule", "read"), ("schedule", "update"),
+                ("schedule", "delete")}
     drift = sorted(set(owned) ^ EXPECTED)
     return not bad and not drift, \
         f"{len(owned)} زوجًا بنطاق OWNER · انحراف={drift} · خروق={bad[:4]}"

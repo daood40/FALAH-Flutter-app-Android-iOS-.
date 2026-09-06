@@ -22,12 +22,13 @@
 """
 from falah import app_routes as R, audit as AUD, auth, authz as AZ, billing
 from falah import jobs as JB, projects as P, ratelimit as RL, referrals as REF
+from falah import schedules as SCH
 from falah.web import Response
 
 # أخطاءُ النطاق التي تعني «طلبُك خاطئ» لا «الخادمُ معطوب». تُجمع هنا لأن
 # طبقةَ HTTP لا ينبغي أن تعرف أسماءَ وحدات النطاق واحدةً واحدة.
 DOMAIN_ERRORS = (P.ProjectError, auth.AuthError, billing.BillingError,
-                 REF.ReferralError, JB.JobError)
+                 REF.ReferralError, JB.JobError, SCH.ScheduleError)
 
 # ───────────────────────── أنواع الحقول ─────────────────────────
 # تُقيَّم بالترتيب المكتوب، فيظهر الخطأُ الأوّل كما كان يظهر.
@@ -78,6 +79,7 @@ GET = [
     _r("GET", "/app/limits",       R.limits,       resource="limits"),
     _r("GET", "/app/jobs",         R.jobs,         resource="job", action="list"),
     _r("GET", "/app/exports",      R.exports,      resource="export", action="list"),
+    _r("GET", "/app/schedules",    R.schedules_list, resource="schedule", action="list"),
     _r("GET", "/app/file",         R.file_get,     resource="export_file",
        action="download", rate=("file", "user"),
        note="الحدُّ قبليٌّ: التنزيل رخيصٌ لكنّه كثير"),
@@ -97,6 +99,8 @@ GET = [
        resource="user", action="read"),
     _r("GET", "/app/jobs/",     R.job_get,     kind="param", owner_field="job",
        resource="job", action="read"),
+    _r("GET", "/app/schedules/", R.schedule_get, kind="param",
+       owner_field="schedule", resource="schedule", action="read"),
 ]
 
 POST = [
@@ -168,6 +172,20 @@ POST = [
     _r("POST", "/app/admin/users/status", R.admin_set_status,
        resource="user", action="update",
        fields=(("user", "user", INT), ("status", "status", RAW))),
+
+    _r("POST", "/app/schedules/create", R.schedule_create,
+       resource="schedule", action="create", owner_field="project",
+       fields=(("project", "project", INT),),
+       note="الملكيّةُ تُفحص هنا وفي schedules.py — طبقتان لا واحدة"),
+    _r("POST", "/app/schedules/update", R.schedule_update,
+       resource="schedule", action="update", owner_field="schedule",
+       fields=(("schedule", "id", INT),)),
+    _r("POST", "/app/schedules/status", R.schedule_status,
+       resource="schedule", action="update", owner_field="schedule",
+       fields=(("schedule", "id", INT), ("status", "status", RAW))),
+    _r("POST", "/app/schedules/delete", R.schedule_delete,
+       resource="schedule", action="delete", owner_field="schedule",
+       fields=(("schedule", "id", INT),)),
 
     _r("POST", "/app/jobs/cancel", R.job_cancel,
        resource="job", action="cancel", owner_field="job",

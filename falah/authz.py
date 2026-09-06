@@ -86,6 +86,8 @@ USER_PERMS = ANON_PERMS | frozenset({
     "project.read", "project.update", "project.delete", "project.render",
     "project_item.create", "project_item.update", "project_item.delete",
     "job.list", "job.read", "job.cancel",
+    "schedule.list", "schedule.read", "schedule.create",
+    "schedule.update", "schedule.delete",
     "export.list", "export_file.download",
 })
 
@@ -287,6 +289,16 @@ POLICY = {
     ("job",          "read"):     OWNER,
     ("job",          "cancel"):   OWNER,
 
+    # الجدولة. السردُ AUTHENTICATED لأنه محصورٌ بالمستخدم في الاستعلام
+    # نفسِه؛ وما عداه OWNER — والمالكُ يُقرأ من القاعدة لا يُصدَّق من الطلب.
+    # و`create` نطاقُه المشروعُ لا الجدول: لا جدولَ بعدُ ليُملَك، والمحروسُ
+    # هو أن يكون المشروعُ لك.
+    ("schedule",     "list"):     AUTHENTICATED,
+    ("schedule",     "read"):     OWNER,
+    ("schedule",     "create"):   AUTHENTICATED,
+    ("schedule",     "update"):   OWNER,
+    ("schedule",     "delete"):   OWNER,
+
     # الملفّات المصدَّرة
     ("export",       "list"):     AUTHENTICATED,
     ("export_file",  "download"): OWNER,
@@ -420,8 +432,13 @@ def _owner_user(c, uid):
     r = c.execute("SELECT id FROM users WHERE id=?", (uid,)).fetchone()
     return r[0] if r else None
 
+def _owner_schedule(c, sid):
+    r = c.execute("SELECT user_id FROM schedules WHERE id=?", (sid,)).fetchone()
+    return r[0] if r else None
+
 OWNER_OF = {
     "user":         _owner_user,
+    "schedule":     _owner_schedule,
     "project":      _owner_project,
     "project_item": _owner_item,
     "job":          _owner_job,

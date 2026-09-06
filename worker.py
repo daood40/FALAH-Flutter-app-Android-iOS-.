@@ -15,7 +15,7 @@ import argparse, json, os, signal, sys, threading, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from falah import store, jobs as J
+from falah import store, jobs as J, schedules as SCH
 
 DB   = os.environ.get("FALAH_DB", os.path.join(HERE, "falah.db"))
 IDLE = float(os.environ.get("FALAH_WORKER_IDLE", 1.0))   # فترة النوم حين يخلو الطابور
@@ -57,8 +57,27 @@ def log(msg):
 def loop(name, once=False, drain=False):
     """حلقة عاملٍ واحد. تنام حين يخلو الطابور فلا تُشغل المعالج بلا عمل."""
     last_reap = 0.0
+    last_sweep = 0.0
     while not _stop.is_set():
         touch_beat()
+        # كنسُ الجداول المستحقّة. **كلَّ ثلاثين ثانية لا كلَّ دورة**: الحلقةُ
+        # تدور كلَّ ثانيةٍ حين يخلو الطابور، فكنسٌ في كلِّ دورةٍ استعلامٌ
+        # ألفَ مرّةٍ في الساعة بلا داعٍ. ودقّةُ نصفِ دقيقةٍ تكفي جدولةً
+        # بالدقيقة.
+        #
+        # وهذا آمنٌ مع عدّة عمّال: التفرّدُ في `schedule_runs` يمنع أن
+        # يُنشئ عاملان مهمّتين لاستحقاقٍ واحد.
+        if time.time() - last_sweep > 30:
+            c = store.connect()
+            try:
+                n = SCH.sweep(c)
+                if n: log(f"الجدولة: وُضعت {n} مهمّةً في الطابور")
+            except Exception as e:
+                # عطبُ الجدولة لا يوقف تنفيذَ المهامّ القائمة
+                log(f"خطأ في كنس الجدولة: {type(e).__name__}: {e}")
+            finally:
+                c.close()
+            last_sweep = time.time()
         if time.time() - last_reap > 60:
             c = store.connect()
             try:
