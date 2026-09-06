@@ -58,8 +58,11 @@ class ProjectItem {
     required this.kind,
     required this.title,
     required this.checks,
+    this.total = 25,
     this.reciter,
     this.drifted = false,
+    this.state = 'ok',
+    this.why,
   });
 
   final int id;
@@ -68,14 +71,25 @@ class ProjectItem {
   final String kind;
   final String title;
 
-  /// كم فحصًا من الخمسة والعشرين اجتازه هذا النصّ. ما دونها لا يُنشر.
+  /// كم فحصًا اجتازه هذا النصّ من [total]. ما دونها لا يُنشر.
   final int checks;
+
+  /// مجموعُ الفحوص كما يعلنه الخادم — **لا رقمٌ ثابتٌ في العميل**: لو زاد
+  /// الخادمُ فحصًا لبقي العميلُ صادقًا بلا تعديل.
+  final int total;
   final String? reciter;
 
   /// انجرفَ النصُّ عن بصمته المحفوظة — يحتاج قبولًا صريحًا من المستخدم.
   final bool drifted;
 
-  bool get verified => checks >= 25;
+  /// `ok` · `drift` · `blocked` · `missing` — كما يعلنها الخادم.
+  final String state;
+
+  /// سببُ الحجب بالعربية، حين يكون محجوبًا. يُعرض كما هو.
+  final String? why;
+
+  bool get verified => state == 'ok' && checks >= total;
+  bool get blocked => state != 'ok';
 }
 
 class Project {

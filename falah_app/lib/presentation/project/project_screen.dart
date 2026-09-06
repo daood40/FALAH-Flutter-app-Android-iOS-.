@@ -156,11 +156,15 @@ class _ItemTile extends ConsumerWidget {
                 ),
               ],
             ),
-            if (item.drifted) ...[
+            // سببُ الحجب يأتي من الخادم بالعربية — يُعرض كما هو ولا
+            // يُعاد صوغُه في العميل، فمصدرُ الحكم واحد.
+            if (item.blocked && item.why != null) ...[
               const SizedBox(height: Space.sm),
               Text(
-                'انجرف النصُّ عن بصمته المحفوظة — راجعه قبل النشر.',
-                style: t.textTheme.bodySmall?.copyWith(color: Palette.warn),
+                item.why!,
+                style: t.textTheme.bodySmall?.copyWith(
+                  color: item.drifted ? Palette.warn : Palette.dangerSoft,
+                ),
               ),
             ],
           ],

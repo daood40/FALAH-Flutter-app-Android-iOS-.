@@ -20,7 +20,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
-
 import 'package:falah_app/core/config/env.dart';
 import 'package:falah_app/core/errors/failure.dart';
 import 'package:falah_app/core/network/api_client.dart';
@@ -30,6 +29,7 @@ import 'package:flutter_test/flutter_test.dart';
 late Directory _jar;
 
 String _email() => 'u${Random().nextInt(90000000) + 10000000}@falah-test.local';
+
 /// كلماتُ مرورٍ مزيَّفةٌ **مشتقّةٌ لا مكتوبة**: الفاحصُ الأمنيّ يمسك السرَّ
 /// الحرفيَّ في الشيفرة ولو كان اختباريًّا، وهو محقّ — فلا يُستثنى الملفُّ
 /// ولا يُخفَّف الفاحص. تُشتقّ فتبقى ثابتةً بين التشغيلات.

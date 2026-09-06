@@ -103,14 +103,48 @@ class Mappers {
     );
   }
 
-  static ProjectItem item(Map<String, dynamic> j) => ProjectItem(
-    id: _int(j['id']),
-    kind: _str(j['kind'], 'quran'),
-    title: _str(j['title']),
-    checks: _int(j['checks']),
-    reciter: j['reciter'] == null ? null : _str(j['reciter']),
-    drifted: _bool(j['drifted']),
-  );
+  /// **حقولُ العنصر كما يرسلها الخادمُ فعلًا** — لا كما نتوقّعها.
+  ///
+  /// كان هذا المحوّلُ يقرأ `checks` و`title` و`drifted`، والخادمُ يرسل
+  /// `checks_now` («٢٥/٢٥» نصًّا) و`card.title` و`state`. فكان كلُّ عنصرٍ
+  /// يظهر بصفر فحصٍ وبلا عنوان.
+  ///
+  /// وأمسكته **رحلةُ مستخدمٍ على خادمٍ حيّ** — ولم يكن ليظهر في اختبارٍ
+  /// بمضاعفاتٍ نكتب نحن شكلَها، لأننا كنّا سنكتبها بالشكل الذي توهّمناه.
+  static ProjectItem item(Map<String, dynamic> j) {
+    final state = _str(j['state'], 'ok');
+    final card = j['card'] is Map
+        ? Map<String, dynamic>.from(j['card'] as Map)
+        : const <String, dynamic>{};
+    return ProjectItem(
+      id: _int(j['id']),
+      kind: _str(j['kind'], 'quran'),
+      // العنوانُ من البطاقة نفسِها — لا حقلَ `title` في ردّ العنصر
+      title: _str(card['title'], _str(card['text'])),
+      checks: _checksPassed(j['checks_now']),
+      total: _checksTotal(j['checks_now']),
+      reciter: j['reciter'] == null ? null : _str(j['reciter']),
+      drifted: state == 'drift',
+      state: state,
+      why: j['why'] == null ? null : _str(j['why']),
+    );
+  }
+
+  /// `checks_now` يأتي «٢٥/٢٥» نصًّا لا رقمًا. وغيابُه يُقرأ صفرًا — وهو
+  /// الصحيح: عنصرٌ بلا تقريرٍ لم يُفحص، فلا يُفترض أنه اجتاز.
+  static int _checksPassed(Object? v) {
+    final s = _str(v);
+    final i = s.indexOf('/');
+    return i < 0 ? _int(v) : (int.tryParse(s.substring(0, i)) ?? 0);
+  }
+
+  /// المجموعُ من الخادم لا ثابتًا في العميل: لو زاد الخادمُ فحصًا بقي
+  /// العميلُ صادقًا بلا تعديل.
+  static int _checksTotal(Object? v) {
+    final s = _str(v);
+    final i = s.indexOf('/');
+    return i < 0 ? 25 : (int.tryParse(s.substring(i + 1)) ?? 25);
+  }
 
   static Job job(Map<String, dynamic> j) {
     final raw = j['job'] is Map
