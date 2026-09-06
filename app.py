@@ -45,6 +45,25 @@ MAX_BODY = CFG.MAX_BODY
 # كل مسارات القراءة في api.py تُمرَّر كما هي. القائمة تُقابل ما أعلنه
 # `falah/content_routes.py` — نقصانُ اسمٍ هنا يعني ٤٠٤ لمسارٍ موجود، وهو
 # ما كشفه الفحص، ولذلك يُقارَن الاثنان في `tests.py` آليًّا.
+def same_site(headers):
+    """`Strict` للويب، و`None` للأصل الأصليّ المعلَن — ولا `None` بلا `Secure`.
+
+    `SameSite=Strict` هو الصحيح ما دام الأصلُ واحدًا: يمنع كلَّ طلبٍ قادمٍ
+    من موقعٍ آخر أن يحمل الجلسة. لكن القشرةَ الأصليّة وFlutter Web أصلٌ
+    **آخر** بحكم المتصفّح، فتُحجب عنهما الكعكةُ تمامًا — وهذا هو العطبُ
+    الذي وجده التدقيق ولم يظهر لأن القشرة لم تُبنَ قطّ.
+
+    و`SameSite=None` بلا `Secure` **ترفضه المتصفّحاتُ الحديثة**، فلو سُمح
+    به هنا لخرجت كعكةٌ لا تُحفظ أصلًا ولا يُدرى لِمَ لا يعمل الدخول.
+    فالقاعدة: إن لم يكن الاتصالُ مشفّرًا نبقى على `Strict` — فشلٌ مغلقٌ
+    مفهومٌ لا صامت.
+
+    ودالّةٌ لا طريقةٌ: تُنادى بالترويسات أو بلا شيء، فتصلح للاختبار الذي
+    يفحص السلسلة وحدها بلا طلبٍ حقيقيّ.
+    """
+    o = ((headers.get("Origin") or "") if headers else "").rstrip("/")
+    return "None" if (o and o in CFG.APP_ORIGINS and SECURE) else "Strict"
+
 CONTENT_PATHS = ("/health", "/sources", "/review", "/topics", "/quran", "/hadith",
                  "/enc", "/reciters", "/audio", "/card", "/verify", "/series",
                  "/options", "/chapters", "/chapter", "/templates", "/template")
@@ -75,12 +94,33 @@ class App(BaseHTTPRequestHandler):
 
     # ــــــــــــــــــــ أدوات الردّ ــــــــــــــــــــ
 
+    def app_origin(self):
+        """أصلُ الطلب إن كان في القائمة المعلَنة — وإلا `None`.
+
+        مطابقةٌ حرفيّةٌ لا نمطيّة: لا بادئات ولا نطاقاتٌ فرعيّةٌ ضمنًا. من
+        أراد نطاقًا فرعيًّا أعلنه. وسببُ الشدّة أن هذه القيمة تُعاد في
+        `Access-Control-Allow-Origin` مع `credentials: true` — أي أنها
+        تقول للمتصفّح: «اسمح لهذا الأصل بقراءة ردٍّ يحمل جلسةَ المستخدم».
+        """
+        o = (self.headers.get("Origin") or "").rstrip("/")
+        return o if o and o in CFG.APP_ORIGINS else None
+
+    def _cors(self, origin):
+        """ترويساتُ CORS لأصلٍ ثبتَ أنه معلَن. لا تُنادى بغيره."""
+        return [("Access-Control-Allow-Origin", origin),
+                ("Access-Control-Allow-Credentials", "true"),
+                # الردُّ يختلف باختلاف الأصل، فلا يُخزَّن لأصلٍ ويُقدَّم لآخر
+                ("Vary", "Origin")]
+
     def _headers(self, ctype, length, extra=()):
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(length))
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")
         self.send_header("Referrer-Policy", "same-origin")
+        o = self.app_origin()
+        if o:
+            for k, v in self._cors(o): self.send_header(k, v)
         for k, v in extra: self.send_header(k, v)
         self.end_headers()
 
@@ -130,11 +170,14 @@ class App(BaseHTTPRequestHandler):
     def set_cookie(self, tok, ttl=auth.SESSION_TTL):
         sec = "; Secure" if SECURE else ""
         return [("Set-Cookie",
-                 f"{COOKIE}={tok}; Path=/; HttpOnly; SameSite=Strict{sec}; Max-Age={ttl}")]
+                 f"{COOKIE}={tok}; Path=/; HttpOnly; "
+                 f"SameSite={same_site(getattr(self, 'headers', None))}{sec}; "
+                 f"Max-Age={ttl}")]
 
     def clear_cookie(self):
         sec = "; Secure" if SECURE else ""
-        return [("Set-Cookie", f"{COOKIE}=; Path=/; HttpOnly; SameSite=Strict{sec}; Max-Age=0")]
+        return [("Set-Cookie", f"{COOKIE}=; Path=/; HttpOnly; "
+                 f"SameSite={same_site(getattr(self, 'headers', None))}{sec}; Max-Age=0")]
 
     def client_ip(self):
         """عنوانُ العميل الحقيقيّ — وهذا أدقّ ممّا يبدو.
@@ -159,12 +202,35 @@ class App(BaseHTTPRequestHandler):
         return self.client_address[0] if self.client_address else "-"
 
     def guard_csrf(self):
-        """طبقتان: ترويسةٌ لا يرسلها نموذجٌ من موقعٍ آخر، ومصدرُ الطلب إن حُدِّد النطاق."""
+        """طبقتان: ترويسةٌ لا يرسلها نموذجٌ من موقعٍ آخر، ومصدرُ الطلب إن حُدِّد النطاق.
+
+        والأصولُ المقبولة: نطاقُ الإنتاج، وما أُعلن في `FALAH_APP_ORIGINS`.
+        ما عداهما يُرفض. وغيابُ `Origin` يمرّ — لأن العميل الأصليّ (Flutter
+        على الهاتف) ليس متصفّحًا ولا يرسلها، والترويسةُ `X-FALAH` وحدها
+        كافيةٌ هناك: لا نموذجَ HTML يستطيع إرسالها.
+        """
         if self.headers.get("X-FALAH") != "1": return False
         if ORIGIN:
             o = (self.headers.get("Origin") or "").rstrip("/")
-            if o and o != ORIGIN: return False
+            if o and o != ORIGIN and o not in CFG.APP_ORIGINS: return False
         return True
+
+    def do_OPTIONS(self):
+        """التمهيدُ لطلبٍ عابرٍ للأصل. لا يُجاب إلا لأصلٍ معلَن.
+
+        بلا هذا يرفض المتصفّحُ كلَّ POST من القشرة قبل أن يصل الخادمَ
+        أصلًا — فيبدو العطبُ كأنه في المصادقة وهو في التمهيد.
+        """
+        o = self.app_origin()
+        if not o:
+            return self.send_json({"error": "أصل غير مسموح"}, 403)
+        self.send_response(204)
+        for k, v in self._cors(o): self.send_header(k, v)
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-FALAH")
+        self.send_header("Access-Control-Max-Age", "600")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     # ــــــــــــــــــــ التمرير إلى طبقة المحتوى ــــــــــــــــــــ
 

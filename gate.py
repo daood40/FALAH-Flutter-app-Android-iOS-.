@@ -62,6 +62,10 @@ GATES = [
     ("invariants", "الثوابت الأمنية", [PY, "invariants.py"],
      True, "خرقُ ثابتٍ أمنيّ — اقرأ اسمَه ومعناه في المخرَج. لا يُخفَّف ثابتٌ لتمرّ بوّابة",
      None),
+    ("cors",     "حدودُ الأصل", [PY, "cors_test.py"],
+     True, "سقوطٌ هنا يعني إمّا أصلًا غريبًا يقرأ ردًّا يحمل جلسة، وإمّا عميلًا "
+           "أصليًّا لا يستطيع الدخول. ولا يُوسَّع الأصلُ لتمرّ بوّابة",
+     None),
     ("docker",   "إعداد الحاوية", None,
      True, "docker compose config يشرح الخطأ", None),
     ("build",    "بناء صورة الحاوية", ["docker", "build", "-t", "falah:gate", "."],
@@ -198,7 +202,7 @@ def main():
                 print(f"  reason  : {first_failure(out)[:180]}")
                 print(f"  command : make {key}" if key in
                       ("lint", "types", "security", "contract", "unit", "audit", "authz", "rbac", "invariants",
-                       "ui", "failure", "leak", "deps")
+                       "ui", "failure", "leak", "deps", "cors")
                       else f"  command : {' '.join(g[2] or [])}")
                 print(f"  file    : {f or '—'}" + (f":{ln}" if ln else ""))
                 print(f"  fix     : {fix}")

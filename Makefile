@@ -9,7 +9,7 @@ PY    ?= python3
 PORT  ?= 8080
 APP   ?= http://localhost:$(PORT)
 
-.PHONY: help dev worker lint typecheck security deps contract test audit ui failure leak isolation authz rbac invariants perms gate gate-all gate-list \
+.PHONY: help dev worker lint typecheck security deps contract test audit ui failure leak isolation authz rbac invariants cors perms gate gate-all gate-list \
         db db-check db-backup db-restore-test migrate-check migrate-guard db-safe-migrate \
         migrate migrate-plan status build docker clean install
 
@@ -112,6 +112,9 @@ rbac:  ## الأدوار والصلاحيات وسجلّ التدقيق — مص
 
 invariants:  ## الثوابت الأمنية المسمّاة — دائمةٌ لا تُخفَّف
 	$(PY) invariants.py
+
+cors:  ## حدودُ الأصل: CORS والتمهيد والكعكة وحارسُ CSRF للعملاء الأصليّين
+	$(PY) cors_test.py
 
 perms:  ## يولّد docs/PERMISSIONS.md من الشيفرة
 	$(PY) perms_report.py
