@@ -238,6 +238,47 @@ def m006_schedules(c):
     """)
 
 
+
+def m007_publishing(c):
+    """النشر — **إضافةٌ محضة**: جدولان وفهارس.
+
+    و`secret_sealed` مُغلَّفٌ لا عارٍ: رمزُ البوت سرُّ المستخدم، ومن ملكه
+    نشر باسمه. ولا يُخزَّن عاريًا في قاعدةٍ قد تُنسخ احتياطيًّا أو تُقرأ
+    بخطأ. و`hint` آخرُ أربعةِ محارفَ وحدها — يعرف بها المستخدمُ أيَّ حسابٍ
+    ربط، ولا تكفي أحدًا لينتحله.
+    """
+    c.executescript("""
+      CREATE TABLE IF NOT EXISTS publish_accounts(
+        id            INTEGER PRIMARY KEY,
+        user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        provider      TEXT    NOT NULL,
+        label         TEXT    NOT NULL DEFAULT '',
+        secret_sealed TEXT    NOT NULL,
+        hint          TEXT    NOT NULL DEFAULT '',
+        status        TEXT    NOT NULL DEFAULT 'active',
+        created_at    INTEGER NOT NULL,
+        updated_at    INTEGER NOT NULL,
+        CHECK (status IN ('active','suspended'))
+      );
+      CREATE INDEX IF NOT EXISTS ix_pubacc_user
+        ON publish_accounts(user_id, created_at DESC);
+
+      CREATE TABLE IF NOT EXISTS publish_attempts(
+        id          INTEGER PRIMARY KEY,
+        user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        account_id  INTEGER REFERENCES publish_accounts(id) ON DELETE SET NULL,
+        export_id   INTEGER,
+        at          INTEGER NOT NULL,
+        result      TEXT    NOT NULL,
+        error       TEXT,
+        external_id TEXT,
+        CHECK (result IN ('sent','failed','skipped'))
+      );
+      CREATE INDEX IF NOT EXISTS ix_pubatt_user
+        ON publish_attempts(user_id, at DESC);
+    """)
+
+
 MIGRATIONS = [
     (1, "jobs_queue",        False, m001_jobs_queue),
     (2, "jobs_idempotency",  False, m002_jobs_idempotency),
@@ -245,6 +286,7 @@ MIGRATIONS = [
     (4, "jobs_index_names",  False, m004_jobs_index_names),
     (5, "roles_and_audit",   False, m005_roles_and_audit),
     (6, "schedules",         False, m006_schedules),
+    (7, "publishing",        False, m007_publishing),
 ]
 
 # ═══════════ المشغّل ═══════════

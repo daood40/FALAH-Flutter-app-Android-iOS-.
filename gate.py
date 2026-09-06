@@ -62,6 +62,10 @@ GATES = [
     ("invariants", "الثوابت الأمنية", [PY, "invariants.py"],
      True, "خرقُ ثابتٍ أمنيّ — اقرأ اسمَه ومعناه في المخرَج. لا يُخفَّف ثابتٌ لتمرّ بوّابة",
      None),
+    ("pub",      "النشر", [PY, "pub_test.py"],
+     True, "سقوطٌ هنا يعني إمّا ادّعاءَ دعمِ منصّةٍ بلا تكامل، وإمّا اعتمادًا "
+           "عاريًا في القاعدة، وإمّا حسابَ نشرٍ يبلغه غيرُ مالكه",
+     None),
     ("sched",    "الجدولة", [PY, "sched_test.py"],
      True, "سقوطٌ هنا يعني إمّا توقيتًا ينزاح بالتوقيت الصيفيّ، وإمّا جدولًا "
            "يُنفَّذ مرّتين، وإمّا مشروعَ غيرِك يُجدوَل",
@@ -210,7 +214,7 @@ def main():
                 print(f"  reason  : {first_failure(out)[:180]}")
                 print(f"  command : make {key}" if key in
                       ("lint", "types", "security", "contract", "unit", "audit", "authz", "rbac", "invariants",
-                       "ui", "failure", "leak", "deps", "cors", "obs", "sched")
+                       "ui", "failure", "leak", "deps", "cors", "obs", "sched", "pub")
                       else f"  command : {' '.join(g[2] or [])}")
                 print(f"  file    : {f or '—'}" + (f":{ln}" if ln else ""))
                 print(f"  fix     : {fix}")
