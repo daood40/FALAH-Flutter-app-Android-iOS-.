@@ -12,14 +12,31 @@ RUN pip install --no-cache-dir -r requirements.txt && playwright install chromiu
 WORKDIR /app
 COPY falah/ falah/
 COPY fonts/ fonts/
-COPY build.py api.py app.py worker.py render.py video.py carousel.py batch.py \
-     templates.py icons.py tests.py export_snapshot.py \
+COPY build.py verify_image.py api.py app.py worker.py render.py video.py carousel.py batch.py \
+     templates.py icons.py export_snapshot.py \
      falah-app.html falah-agent.html manifest.webmanifest sw.js README.md ./
 COPY icons/ icons/
 
+# `backup.sh` وحدَه من `deploy/`: النسخُ الاحتياطيُّ يُشغَّل **داخل** الحاوية
+# حيث القاعدةُ على الحجم، فيلزم أن يكون فيها.
+#
+# ولا يُكتب `COPY deploy/ deploy/`: المجلّدُ يحوي `.env` بأسرارِ الإنتاج،
+# وطبقاتُ الصورة تُقرأ بـ`docker history` ولو حُذف الملفُّ في طبقةٍ تالية.
+COPY deploy/backup.sh deploy/
+
 # القاعدة تُبنى وقت الصورة إن وُجد الخام، أو تُركَّب كحجم خارجي
 COPY raw/ raw/
-RUN python3 build.py && python3 tests.py && rm -rf raw
+
+# ═══ التحقّقُ من الصورة — لا من المستودع ═══
+# كان هنا `python3 tests.py`، وهو خطأٌ في الشكل لا في النيّة: ذلك الملفُّ
+# يفحص **المستودع** — يقرأ `Dockerfile` و`ci.yml` و`.gitignore` و`deploy/`.
+# فكان يُلزم صورةَ الإنتاج أن تحمل سقالةَ المستودع كلَّها لتفحص نفسها بها،
+# ثم يسقط البناءُ لأنّ الصورةَ — بحقٍّ — لا تحمل `Dockerfile`.
+#
+# فالفصل: `tests.py` يجري على المستودع في خطّ التكامل (وظيفتا static و
+# tests)، **ولم يُنقص منه شيء**. وهنا يُفحص ما بُني في هذه الصورة فعلًا:
+# قاعدةُ محتوًى سليمةٌ غيرُ فارغة، ثم خادمٌ يقلع ويُعلن جاهزيّته.
+RUN python3 build.py && python3 verify_image.py && rm -rf raw
 
 # app.db والصادرات على حجمٍ خارجي كي تبقى بعد تحديث الصورة
 VOLUME ["/data"]

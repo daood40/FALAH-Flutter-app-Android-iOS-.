@@ -444,6 +444,31 @@ check("العامل خدمةٌ مستقلّة عن الخادم في النشر"
 check("الخادم والعامل يتقاسمان الطابور ومجلّد الصادرات",
       dep.count("falah-data:/data") == 2 and dep.count("falah-exports:/app/exports") == 2)
 check("الصادرات على حجمٍ يبقى بعد تحديث الصورة", "falah-exports:" in dep.split("volumes:")[-1])
+# بناءُ الصورة يتحقّق من نفسه — وإلّا خرجت صورةٌ بقاعدةٍ فارغةٍ أو لا تقلع،
+# ولا يُعلَم إلا في الإنتاج. (وهذا الملفُّ نفسُه لا يجري داخل الصورة: هو
+# يفحص المستودعَ لا الصورة — يقرأ `Dockerfile` و`ci.yml` و`.gitignore`.)
+_vi = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "verify_image.py"), encoding="utf-8").read()
+check("بناءُ الصورة يتحقّق من نفسه قبل أن تُختم",
+      "verify_image.py" in _dock and "python3 verify_image.py" in _dock)
+check("والتحقّقُ يشمل سلامةَ قاعدة المحتوى وامتلاءها",
+      "integrity_check" in _vi and "MIN_AYAT = 6236" in _vi
+      and "MIN_SURAHS = 114" in _vi)
+check("وأنّ الخادم يقلع عليها ويُعلن جاهزيّته",
+      "/readyz" in _vi and '"ready": true' in _vi and '"content_db": true' in _vi)
+# لا يُفحص فهرسُ البحث ضمنًا: جداولُ ممتلئةٌ وفهرسٌ فارغٌ = بحثٌ لا يجد شيئًا
+check("وأنّ فهرسَ البحث مبنيٌّ لا الجداولَ وحدها", "ayat_fts" in _vi)
+# التعليقُ الذي يذكرها لا يُحسب — يُفحص ما يُنفَّذ لا ما يُشرح. (وقد أسقط
+# هذا الفحصَ أوّلَ مرّةٍ تعليقٌ يشرح لماذا لا يُكتب `COPY deploy/`.)
+_dock_x = "\n".join(l for l in _dock.splitlines() if not l.lstrip().startswith("#"))
+check("ولا يُنسخ مجلّدُ النشر كلُّه — فيه أسرارٌ تبقى في الطبقة",
+      "COPY deploy/ deploy/" not in _dock_x and "deploy/backup.sh" in _dock_x)
+# طبقاتُ الصورة تُقرأ بـ`docker history`؛ فما لا يدخل السياقَ لا يدخل طبقة
+_di = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        ".dockerignore"), encoding="utf-8").read()
+check("وسياقُ البناء يمنع الأسرارَ وقواعدَ البيانات",
+      all(x in _di for x in ("**/.env", "*.db", "**/*.jks", "falah_app/")))
+
 check("فحص الحاوية يسأل عن الحياة لا عن إحصاء القاعدة",
       "/healthz" in _dock and "http://localhost:8080/health |" not in _dock
       and "/health ||" not in _dock)
@@ -559,11 +584,25 @@ check("لا خطوةَ فحصٍ تُمرَّر على أنها نجاح",
       not [l for l in _ci.splitlines()
            if "continue-on-error" in l and not l.lstrip().startswith("#")])
 check("البناء مشروطٌ بنجاح الاختبارات", "needs: [static, tests]" in _ci)
+# **الحرفيّةُ مقصودة**: من أضاف وظيفةً إلى الأنبوب أسقط هذا السطرَ حتى
+# يضمّها إلى `needs` البوّابة بالاسم. ولولا ذلك لأمكن أن تسقط وظيفةٌ
+# ويُدمَج العملُ لأنّ أحدًا لم يشترطها. أُضيف `flutter` يوم بُني العميل.
 check("وبوّابةٌ واحدة تُلخّص الكلّ وتُشترط في الحماية",
-      "QUALITY_GATE" in _ci and "needs: [static, tests, build]" in _ci)
+      "QUALITY_GATE" in _ci and "needs: [static, tests, build, flutter]" in _ci)
 for _step in ("ruff check", "mypy", "security_scan.py", "api_contract.py --check",
-              "tests.py", "audit.py", "ui_audit.py", "failure_test.py", "docker build"):
+              "tests.py", "audit.py", "ui_audit.py", "failure_test.py", "docker build",
+              # الاختباراتُ التي أُضيفت بعد الأساس — تُشتَرط بالاسم لئلّا
+              # تُكتب وتبقى خارج الأنبوب فلا تجري إلا على جهاز كاتبها
+              "cors_test.py", "obs_test.py", "sched_test.py", "pub_test.py",
+              # وعميلُ Flutter: تحليلٌ واختبارٌ وبناءٌ — لا بناءٌ وحده
+              "flutter analyze", "flutter test", "flutter build apk",
+              "flutter build appbundle"):
     check(f"خطّ التكامل يشمل: {_step}", _step in _ci)
+
+# صلاحيةُ الإنترنت: عيبٌ وقع فعلًا وكلّف بناءً كاملًا حتى ظهر. فيُحرَس
+# في الأنبوب لا في الذاكرة.
+check("والأنبوب يتحقّق من صلاحية الإنترنت في نسخة الإصدار",
+      "android.permission.INTERNET" in _ci)
 
 # الخطوات التي أُضيفت في التصليب — تُشترط في CI صراحةً
 for _step in ("pip-audit", "leak_test.py", "isolation_test.py", "dbsafe.py restore-test",
