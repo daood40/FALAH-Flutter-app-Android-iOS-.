@@ -98,6 +98,7 @@ ADMIN_PERMS = frozenset({
     "user_role.update",   # تغييرُ دورِ حساب
     "audit.list",         # قراءةُ سجلّ التدقيق
     "subscription.grant", # منحُ اشتراكٍ وقبولُ إيصالٍ موثوق
+    "metrics.read",       # قراءةُ القياسات — تكشف حجمَ الاستعمال وأنماطَ الفشل
 })
 
 PERMISSIONS = frozenset(USER_PERMS | ADMIN_PERMS)
@@ -110,7 +111,8 @@ PERMISSIONS = frozenset(USER_PERMS | ADMIN_PERMS)
 # خطّية، والبنيةُ لا تفترضه: `ROLES` قاموسُ (اسم → مجموعة)، فدورٌ جانبيٌّ
 # غيرُ خطّيّ يُضاف بلا تغييرِ منطق.
 
-_MODERATOR = USER_PERMS | {"user.list", "user.read", "audit.list"}
+_MODERATOR = USER_PERMS | {"user.list", "user.read", "audit.list",
+                           "metrics.read"}
 _ADMIN     = _MODERATOR | {"user.update", "user_role.read", "subscription.grant"}
 _SUPER     = _ADMIN | {"user_role.update"}
 
@@ -307,6 +309,9 @@ POLICY = {
     ("user_role",    "read"):     AUTHENTICATED,
     ("user_role",    "update"):   ANY,
     ("audit",        "list"):     AUTHENTICATED,
+    # القياساتُ ليست عامّة: تكشف حجمَ الاستعمال وأنماطَ الفشل،
+    # وكلاهما معلومةٌ لمن يخطّط هجومًا. مشرفٌ فما فوق.
+    ("metrics",      "read"):     AUTHENTICATED,
 
     # مسارُ تطبيقٍ لم يُعلَن. وثيقةٌ أوّلًا ثم ٤٠٤ من معالِجه — وهو ترتيبُ
     # اليوم نفسُه: `if not u: 401` كان يسبق «مسار غير معروف».

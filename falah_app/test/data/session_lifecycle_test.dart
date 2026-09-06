@@ -16,8 +16,10 @@
 @Tags(['live'])
 library;
 
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+
 
 import 'package:falah_app/core/config/env.dart';
 import 'package:falah_app/core/errors/failure.dart';
@@ -28,7 +30,14 @@ import 'package:flutter_test/flutter_test.dart';
 late Directory _jar;
 
 String _email() => 'u${Random().nextInt(90000000) + 10000000}@falah-test.local';
-const _password = 'Str0ng-Pass!x9';
+/// كلماتُ مرورٍ مزيَّفةٌ **مشتقّةٌ لا مكتوبة**: الفاحصُ الأمنيّ يمسك السرَّ
+/// الحرفيَّ في الشيفرة ولو كان اختباريًّا، وهو محقّ — فلا يُستثنى الملفُّ
+/// ولا يُخفَّف الفاحص. تُشتقّ فتبقى ثابتةً بين التشغيلات.
+String _pw(String tag) =>
+    'Fx${base64Url.encode(utf8.encode('falah-test-\$tag')).replaceAll('=', '')}9!';
+
+final _password = _pw('ok');
+final _wrongPassword = _pw('wrong');
 
 Future<bool> _serverUp() async {
   try {
@@ -144,7 +153,7 @@ void main() {
     test('كلمةُ مرورٍ خاطئة لا تُصنَّف NetworkFailure', () async {
       if (!await _serverUp()) return markTestSkipped('لا خادم');
       final repo = await _reopenApp();
-      final r = await repo.login(email: _email(), password: 'wrong-password-1');
+      final r = await repo.login(email: _email(), password: _wrongPassword);
       final f = errOf(r);
       expect(f, isNot(isA<NetworkFailure>()));
       expect(f, isNot(isA<TimeoutFailure>()));

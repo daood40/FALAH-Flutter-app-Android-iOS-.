@@ -87,5 +87,7 @@ falah_app/android/.gradle/
 falah_app/android/local.properties
 falah_app/android/app/*.jks
 falah_app/android/key.properties
+falah_app/ios/Flutter/ephemeral/
+falah_app/android/.cxx/
 falah_app/ios/Pods/
 falah_app/ios/.symlinks/

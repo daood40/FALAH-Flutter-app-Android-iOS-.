@@ -521,8 +521,12 @@ _std = set(sys.stdlib_module_names)
 _localmods = {f[:-3] for f in os.listdir(_root) if f.endswith(".py")} | {"falah"}
 _imported = set()
 for _dp, _dirs, _fs in os.walk(_root):
+    # `falah_app` مشروعُ Dart: ما فيه من بايثون تولّده أدواتُ Flutter ولا
+    # نكتبه — يُستثنى كما استُثني `mobile` للسبب نفسِه. والفاحصُ يسأل عن
+    # اعتمادياتِ خادمنا لا عن أدوات سلسلةِ بناءٍ أخرى.
     _dirs[:] = [d for d in _dirs if d not in
-                ("raw","templates","exports","out","__pycache__",".git","mobile")]
+                ("raw","templates","exports","out","__pycache__",".git",
+                 "mobile","falah_app")]
     for _f in _fs:
         if not _f.endswith(".py"): continue
         try: _tree = _ast2.parse(open(os.path.join(_dp,_f), encoding="utf-8").read())

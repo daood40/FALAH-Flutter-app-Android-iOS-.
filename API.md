@@ -35,6 +35,7 @@
 | METHOD | PATH | AUTH | INPUT | OUTPUT | ERRORS |
 |---|---|---|---|---|---|
 | GET | `/app/admin/audit` | صلاحية audit.list | limit, offset, action, actor, result | {total, events[]} — وقراءتُه نفسُها تُسجَّل | 401 · 403 |
+| GET | `/app/admin/metrics` | صلاحية metrics.read | — | {uptime_s, counters[], timers[], queue} — لقطةٌ من الذاكرة. الوسومُ معدودةٌ مسبقًا (مسارٌ مُعمَّمٌ · طريقةٌ · رمز) فلا معرّفَ مستخدمٍ ولا طلبٍ فيها | 401 · 403 |
 | GET | `/app/admin/roles` | صلاحية user_role.read | — | {roles, assignable, permissions} | 401 · 403 |
 | GET | `/app/admin/users` | صلاحية user.list | limit, offset, role | {total, users[]} — أعمدةٌ مسمّاة بلا اشتقاقِ كلمةِ مرورٍ ولا ملح | 401 · 403 |
 | GET | `/app/admin/users/{id}` | صلاحية user.read | — | {user} | 401 · 403 · 404 |

@@ -88,6 +88,8 @@ GET = [
     _r("GET", "/app/admin/roles",  R.admin_roles, resource="user_role", action="read"),
     _r("GET", "/app/admin/audit",  R.admin_audit, resource="audit", action="list",
        note="audit.list — وقراءتُه نفسُها تُسجَّل"),
+    _r("GET", "/app/admin/metrics", R.metrics, resource="metrics", action="read",
+       note="metrics.read — القياساتُ تكشف حجمَ الاستعمال وأنماطَ الفشل"),
 
     _r("GET", "/app/projects/", R.project_open, kind="param", owner_field="project",
        resource="project", action="read"),

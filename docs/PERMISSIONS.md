@@ -2,7 +2,7 @@
 
 > مولَّدٌ من الشيفرة بـ`python3 perms_report.py`. **لا يُحرَّر باليد.**
 
-**38 صلاحيةً ⟷ 38 زوجًا (مورِد، فعل)** — تقابلٌ تامٌّ في الاتجاهين. واسمُ الصلاحية هو الزوجُ نفسُه، فلا يمكن أن توجد عمليةٌ بلا صلاحية.
+**39 صلاحيةً ⟷ 39 زوجًا (مورِد، فعل)** — تقابلٌ تامٌّ في الاتجاهين. واسمُ الصلاحية هو الزوجُ نفسُه، فلا يمكن أن توجد عمليةٌ بلا صلاحية.
 
 ## النطاقات
 
@@ -37,6 +37,7 @@
 | `job.list` | job | list | `AUTH` | `user` | — | — | `GET /app/jobs` |
 | `job.read` | job | read | `OWNER` | `user` | — | — | `GET /app/jobs/{id}` |
 | `limits.read` | limits | read | `AUTH` | `user` | — | — | `GET /app/limits` |
+| `metrics.read` | metrics | read | `AUTH` | `moderator` | — | — | `GET /app/admin/metrics` |
 | `project.create` | project | create | `AUTH` | `user` | ✔ `project.created` | — | `POST /app/projects/create` |
 | `project.delete` | project | delete | `OWNER` | `user` | ✔ `project.deleted` | — | `POST /app/projects/delete` |
 | `project.list` | project | list | `AUTH` | `user` | — | — | `GET /app/projects` |
@@ -67,9 +68,9 @@
 |---|---:|---|
 | `anonymous` | 8 | `catalogue.read` · `content.list` · `content.read` · `credential.update` · `registration.create` · `service.read` · `session.create` · `session.delete` |
 | `user` | 31 | `account.delete` · `account.update` · `agent.create` · `agent.read` · `export.list` · `export_file.download` · `job.cancel` · `job.list` · `job.read` · `limits.read` · `project.create` · `project.delete` · `project.list` · `project.read` · `project.render` · `project.update` · `project_item.create` · `project_item.delete` · `project_item.update` · `referral.read` · `subscription.read` · `subscription.update` · `unknown.read` |
-| `moderator` | 34 | `audit.list` · `user.list` · `user.read` |
-| `admin` | 37 | `subscription.grant` · `user.update` · `user_role.read` |
-| `super_admin` | 38 | `user_role.update` |
+| `moderator` | 35 | `audit.list` · `metrics.read` · `user.list` · `user.read` |
+| `admin` | 38 | `subscription.grant` · `user.update` · `user_role.read` |
+| `super_admin` | 39 | `user_role.update` |
 
 ## ما يفحصه هذا الجدولُ آليًّا
 

@@ -134,6 +134,11 @@ SPEC = {
                         "{roles, assignable, permissions}", "401 · 403"),
   "/app/admin/audit":  ("GET", "صلاحية audit.list", "limit, offset, action, actor, result",
                         "{total, events[]} — وقراءتُه نفسُها تُسجَّل", "401 · 403"),
+  "/app/admin/metrics": ("GET", "صلاحية metrics.read", "—",
+                        "{uptime_s, counters[], timers[], queue} — لقطةٌ من "
+                        "الذاكرة. الوسومُ معدودةٌ مسبقًا (مسارٌ مُعمَّمٌ · طريقةٌ · "
+                        "رمز) فلا معرّفَ مستخدمٍ ولا طلبٍ فيها",
+                        "401 · 403"),
 }
 
 def frontend_calls():

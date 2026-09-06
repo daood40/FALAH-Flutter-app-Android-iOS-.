@@ -19,7 +19,7 @@
 """
 import json, os
 
-from falah import audit as AUD, auth, authz as AZ, billing
+from falah import obs, audit as AUD, auth, authz as AZ, billing
 from falah import jobs as JB, projects as P, ratelimit as RL
 from falah import referrals as REF, settings as S, store
 from falah.web import Response
@@ -488,3 +488,14 @@ def admin_audit(rq):
     AUD.from_request(rq, "audit.read", resource_type="audit_logs",
                      metadata={"returned": len(out["events"])})
     return Response(out)
+
+def metrics(rq):
+    """لقطةُ القياسات. **ليست عامّةً** — تُفرض بصلاحية `metrics.read`.
+
+    ولماذا لقطةٌ عند الطلب لا كتابةٌ دائمة؟ لأن الخطَّ الأساس قاس أن
+    المسارَ يستغرق ١٫٢٨–٢٫٠٩ مل.ث؛ فكتابةُ قرصٍ لكلِّ طلبٍ تُضاعف الزمن.
+    العدّاداتُ في الذاكرة كلفتُها لا تكاد تُقاس، والقراءةُ نادرة.
+    """
+    snap = obs.M.snapshot()
+    snap["queue"] = JB.stats(rq.c)
+    return Response(snap, 200)

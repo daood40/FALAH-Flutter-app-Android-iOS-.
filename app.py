@@ -27,7 +27,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import api
 from falah import store, auth, jobs as JB
-from falah import audit as AUD, authz as AZ, routing as RT, settings as CFG
+from falah import audit as AUD, authz as AZ, obs, routing as RT, settings as CFG
 from falah.web import Request
 
 CFG.refresh()          # إعادةُ تحميل الوحدة تعيد قراءةَ البيئة
@@ -84,6 +84,22 @@ def body_json(h):
     try:    return json.loads(h.rfile.read(n).decode("utf-8"))
     except Exception: return {}
 
+
+_ID_SEG = None
+
+def _route_label(path):
+    """يحوّل `/app/projects/7` إلى `/app/projects/:id`.
+
+    **هذه هي الحيلولةُ دون الانفجار العدديّ.** لو وُسم المقياسُ بالمسار
+    الخام لصار لكلِّ مشروعٍ سطرٌ في الجدول — أي آلافُ الأسطر لآلافِ
+    المستخدمين. والوسمُ الصحيح يقول «مسارُ فتحِ مشروع» لا «المشروع ٧».
+    """
+    parts = []
+    for seg in path.split("/"):
+        parts.append(":id" if seg.isdigit() else seg)
+    return "/".join(parts)
+
+
 class App(BaseHTTPRequestHandler):
     server_version = "FALAH"
     # `BaseHTTPRequestHandler` يُلحق `sys_version` بترويسة Server، فتصير
@@ -126,6 +142,7 @@ class App(BaseHTTPRequestHandler):
 
     def send_json(self, obj, code=200, extra=()):
         b = json.dumps(obj, ensure_ascii=False).encode("utf-8")
+        self._status = code          # يقرؤه غلافُ القياس في `app_request`
         self.send_response(code)
         self._headers("application/json; charset=utf-8", len(b),
                       list(extra) + [("Cache-Control", "no-store")])
@@ -355,6 +372,40 @@ class App(BaseHTTPRequestHandler):
         return AZ.subject_for(u)
 
     def app_request(self, method, path, body):
+        """يقيس ويسجّل، ثم يفوّض إلى `_app_request` — فيبقى المنطقُ نظيفًا.
+
+        القياسُ هنا لا في المعالجات: موضعٌ واحدٌ يعني أن مسارًا جديدًا
+        يُقاس بلا أن يتذكّر أحدٌ إضافتَه. والسطرُ يُكتب في `finally` فيُسجَّل
+        الطلبُ الساقطُ كما يُسجَّل الناجح.
+        """
+        t0 = time.perf_counter()
+        self._rid = AUD.new_request_id()
+        self._status = 0
+        try:
+            return self._app_request(method, path, body)
+        finally:
+            ms = (time.perf_counter() - t0) * 1000
+            code = self._status or 0
+            # وسمُ المسار بلا معرّفات: `/app/projects/7` تصير `/app/projects/:id`
+            route = _route_label(path)
+            obs.M.inc("http_requests_total", route=route, method=method,
+                      status=str(code))
+            obs.M.observe("http_request_ms", ms, route=route)
+            if code >= 500:
+                obs.M.inc("http_errors_total", route=route,
+                          code=obs.code_for(code))
+                obs.error("http.request", route=route, method=method,
+                          status=code, ms=round(ms, 2), request_id=self._rid)
+            elif code in (401, 403, 429):
+                # رفضٌ متوقَّعٌ في نظامٍ سليم — WARNING لا ERROR ولا CRITICAL
+                obs.M.inc("http_denied_total", route=route, status=str(code))
+                obs.warn("http.denied", route=route, method=method,
+                         status=code, ms=round(ms, 2), request_id=self._rid)
+            else:
+                obs.info("http.request", route=route, method=method,
+                         status=code, ms=round(ms, 2), request_id=self._rid)
+
+    def _app_request(self, method, path, body):
         """دورةُ حياةِ الطلب كاملةً — وموضعُ ترجمةِ الأخطاء الوحيد.
 
         كانت هذه مكرّرةً مرّتين (`app_get` و`app_post`) بكتلتَي `except`
@@ -365,7 +416,7 @@ class App(BaseHTTPRequestHandler):
         rq = None
         try:
             u = self.user(c)
-            rid = AUD.new_request_id()
+            rid = getattr(self, '_rid', None) or AUD.new_request_id()
             rq = Request(path=path, method=method, request_id=rid,
                          query=urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query),
                          body=body, c=c, root=HERE, content_db=DB,
