@@ -28,10 +28,10 @@ final class Env {
   );
 
   static Flavor get flavor => switch (_flavor) {
-        'prod' => Flavor.prod,
-        'staging' => Flavor.staging,
-        _ => Flavor.dev,
-      };
+    'prod' => Flavor.prod,
+    'staging' => Flavor.staging,
+    _ => Flavor.dev,
+  };
 
   static bool get isProd => flavor == Flavor.prod;
 

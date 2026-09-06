@@ -12,7 +12,11 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// خادمٌ وهميٌّ داخل dio نفسِه — بلا شبكةٍ ولا منفذ. يُختبر التصنيفُ
 /// لا النقل، فلا حاجةَ إلى مقبسٍ حقيقيّ.
-Dio _dioReturning(int code, {Object? body, Map<String, List<String>>? headers}) {
+Dio _dioReturning(
+  int code, {
+  Object? body,
+  Map<String, List<String>>? headers,
+}) {
   final dio = Dio(BaseOptions(validateStatus: (_) => true));
   dio.httpClientAdapter = _FakeAdapter(code, body, headers);
   return dio;
@@ -25,8 +29,11 @@ class _FakeAdapter implements HttpClientAdapter {
   final Map<String, List<String>>? headers;
 
   @override
-  Future<ResponseBody> fetch(RequestOptions options, Stream<List<int>>? stream,
-      Future<void>? cancelFuture) async {
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<List<int>>? stream,
+    Future<void>? cancelFuture,
+  ) async {
     return ResponseBody.fromString(
       body == null ? '' : _encode(body!),
       code,
@@ -44,10 +51,18 @@ class _FakeAdapter implements HttpClientAdapter {
   void close({bool force = false}) {}
 }
 
-Future<Failure> _failureFor(int code,
-    {String? error, Map<String, List<String>>? headers}) async {
-  final api = ApiClient(_dioReturning(code,
-      body: error == null ? null : {'error': error}, headers: headers));
+Future<Failure> _failureFor(
+  int code, {
+  String? error,
+  Map<String, List<String>>? headers,
+}) async {
+  final api = ApiClient(
+    _dioReturning(
+      code,
+      body: error == null ? null : {'error': error},
+      headers: headers,
+    ),
+  );
   final r = await api.get('/app/me');
   return switch (r) {
     Err(:final failure) => failure,
@@ -91,9 +106,14 @@ void main() {
     });
 
     test('يقرأ Retry-After ثوانيَ', () async {
-      final f = await _failureFor(429, headers: {
-        'retry-after': ['30']
-      }) as RateLimitFailure;
+      final f =
+          await _failureFor(
+                429,
+                headers: {
+                  'retry-after': ['30'],
+                },
+              )
+              as RateLimitFailure;
       expect(f.retryAfter, const Duration(seconds: 30));
     });
 
@@ -107,19 +127,25 @@ void main() {
     // كلاهما ٤٠٠ من الخادم، وعلاجُهما مختلف: الحصّةُ ترقيةٌ لا إعادةُ
     // محاولة. فالتفريقُ بالنصّ ضرورةٌ لا زخرفة.
     test('نصُّ الخطّة ⇒ QuotaFailure', () async {
-      final f = await _failureFor(400,
-          error: 'هذا المقاس غير متاح في خطّة «مجّاني»');
+      final f = await _failureFor(
+        400,
+        error: 'هذا المقاس غير متاح في خطّة «مجّاني»',
+      );
       expect(f, isA<QuotaFailure>());
     });
 
     test('«الحصّة» ⇒ QuotaFailure', () async {
-      expect(await _failureFor(400, error: 'انتهت الحصّة لهذا الشهر'),
-          isA<QuotaFailure>());
+      expect(
+        await _failureFor(400, error: 'انتهت الحصّة لهذا الشهر'),
+        isA<QuotaFailure>(),
+      );
     });
 
     test('خطأٌ عاديّ ⇒ ValidationFailure', () async {
-      expect(await _failureFor(400, error: 'حقل ناقص: email'),
-          isA<ValidationFailure>());
+      expect(
+        await _failureFor(400, error: 'حقل ناقص: email'),
+        isA<ValidationFailure>(),
+      );
     });
   });
 

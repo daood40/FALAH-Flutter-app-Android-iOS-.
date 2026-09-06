@@ -43,15 +43,22 @@ final class Log {
 
   static LogLevel minLevel = LogLevel.debug;
 
-  static void _emit(LogLevel level, String event, Map<String, Object?>? fields) {
+  static void _emit(
+    LogLevel level,
+    String event,
+    Map<String, Object?>? fields,
+  ) {
     if (level.index < minLevel.index) return;
-    final safe = scrub(fields ?? const <String, Object?>{}) as Map<String, Object?>;
+    final safe =
+        scrub(fields ?? const <String, Object?>{}) as Map<String, Object?>;
     final parts = safe.entries
         .where((e) => e.value != null)
         .map((e) => '${e.key}=${e.value}')
         .join(' ');
-    dev.log('[${level.name}] $event${parts.isEmpty ? '' : ' $parts'}',
-        name: 'falah');
+    dev.log(
+      '[${level.name}] $event${parts.isEmpty ? '' : ' $parts'}',
+      name: 'falah',
+    );
   }
 
   static void debug(String event, [Map<String, Object?>? f]) =>

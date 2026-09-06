@@ -37,8 +37,9 @@ final class TimeoutFailure extends Failure {
 /// هذا التمييزُ بعينه هو العيبُ الذي رصده التدقيق في العميل القديم: كان
 /// انتهاءُ الجلسة يظهر للمستخدم رسالةَ شبكة.
 final class UnauthorizedFailure extends Failure {
-  const UnauthorizedFailure([super.message = 'انتهت الجلسة — سجّل الدخول من جديد'])
-      : super(requestId: null);
+  const UnauthorizedFailure([
+    super.message = 'انتهت الجلسة — سجّل الدخول من جديد',
+  ]) : super(requestId: null);
 }
 
 /// ٤٠٣ — الجلسةُ صحيحةٌ والعمليةُ ممنوعة.
@@ -58,7 +59,9 @@ final class ValidationFailure extends Failure {
 
 /// ٤١٣ — الجسمُ أكبرُ من الحدّ.
 final class PayloadTooLargeFailure extends Failure {
-  const PayloadTooLargeFailure([super.message = 'المحتوى أكبر من الحدّ المسموح']);
+  const PayloadTooLargeFailure([
+    super.message = 'المحتوى أكبر من الحدّ المسموح',
+  ]);
 }
 
 /// ٤٢٩ — تجاوزُ حدِّ المعدّل. `retryAfter` من الترويسة إن أرسلها الخادم.
@@ -75,11 +78,13 @@ final class QuotaFailure extends Failure {
 /// ٥xx — عطبٌ في الخادم. لا تفصيلَ للمستخدم.
 final class ServerFailure extends Failure {
   const ServerFailure([super.message = 'خطأ في الخادم', String? requestId])
-      : super(requestId: requestId);
+    : super(requestId: requestId);
 }
 
 /// ما لم يُصنَّف. وجودُه ليس عذرًا لترك خطأٍ بلا صنف.
 final class UnknownFailure extends Failure {
-  const UnknownFailure([super.message = 'حدث خطأ غير متوقّع', String? requestId])
-      : super(requestId: requestId);
+  const UnknownFailure([
+    super.message = 'حدث خطأ غير متوقّع',
+    String? requestId,
+  ]) : super(requestId: requestId);
 }

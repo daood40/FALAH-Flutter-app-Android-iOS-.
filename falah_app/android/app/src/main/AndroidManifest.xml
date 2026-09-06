@@ -1,6 +1,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- إذنُ الإنترنت. يضيفه Flutter إلى بيانَي التطوير والقياس وحدهما،
+         فتخرج نسخةُ الإصدار بلا شبكة: التطبيقُ يفتح ولا يبلغ الخادمَ ولا
+         رسالةَ خطأٍ مفهومة. كشفه apkanalyzer على أوّل نسخةٍ بُنيت. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+
     <application
-        android:label="falah_app"
+        android:label="فَلاح"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

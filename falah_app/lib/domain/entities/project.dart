@@ -3,27 +3,31 @@ library;
 
 /// حالةُ المهمّة في الطابور — الخمسةُ التي يعلنها `falah/jobs.py`.
 /// لا تُضاف حالةٌ سادسةٌ في العميل: ما لا يعرفه الخادمُ لا يوجد.
-enum JobState { queued, running, done, failed, canceled;
+enum JobState {
+  queued,
+  running,
+  done,
+  failed,
+  canceled;
 
   static JobState parse(String? s) => switch (s) {
-        'queued' => JobState.queued,
-        'running' => JobState.running,
-        'done' => JobState.done,
-        'failed' => JobState.failed,
-        'canceled' => JobState.canceled,
-        _ => JobState.queued,
-      };
+    'queued' => JobState.queued,
+    'running' => JobState.running,
+    'done' => JobState.done,
+    'failed' => JobState.failed,
+    'canceled' => JobState.canceled,
+    _ => JobState.queued,
+  };
 
-  bool get isTerminal =>
-      this == done || this == failed || this == canceled;
+  bool get isTerminal => this == done || this == failed || this == canceled;
 
   String get label => switch (this) {
-        queued => 'في الطابور',
-        running => 'يُصيَّر',
-        done => 'اكتمل',
-        failed => 'فشل',
-        canceled => 'أُلغي',
-      };
+    queued => 'في الطابور',
+    running => 'يُصيَّر',
+    done => 'اكتمل',
+    failed => 'فشل',
+    canceled => 'أُلغي',
+  };
 }
 
 class Job {

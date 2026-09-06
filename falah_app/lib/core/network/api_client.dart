@@ -29,18 +29,19 @@ import '../logging/logger.dart';
 /// الخادم عند التشخيص. ستّةَ عشرَ محرفًا ستّةَ عشريًّا — كما `audit.py`.
 String newRequestId() {
   final r = Random.secure();
-  return List.generate(8, (_) => r.nextInt(256).toRadixString(16).padLeft(2, '0'))
-      .join();
+  return List.generate(
+    8,
+    (_) => r.nextInt(256).toRadixString(16).padLeft(2, '0'),
+  ).join();
 }
 
 /// ما يُعيده النداء: إمّا بيانات وإمّا `Failure`. لا استثناءاتٌ تتسرّب.
 sealed class Result<T> {
   const Result();
-  R fold<R>(R Function(Failure) onError, R Function(T) onOk) =>
-      switch (this) {
-        Err<T>(:final failure) => onError(failure),
-        Ok<T>(:final value) => onOk(value),
-      };
+  R fold<R>(R Function(Failure) onError, R Function(T) onOk) => switch (this) {
+    Err<T>(:final failure) => onError(failure),
+    Ok<T>(:final value) => onOk(value),
+  };
 }
 
 final class Ok<T> extends Result<T> {
@@ -65,36 +66,44 @@ class ApiClient {
   /// [cookieDir] مسارُ الجرّة على الجهاز. في الاختبار يُمرَّر مجلّدٌ مؤقّت.
   static Future<ApiClient> create({required String cookieDir}) async {
     Env.assertValid();
-    final dio = Dio(BaseOptions(
-      baseUrl: Env.apiBaseUrl,
-      connectTimeout: Env.connectTimeout,
-      receiveTimeout: Env.receiveTimeout,
-      // لا نرمي على رموز الحالة: نصنّفها بأنفسنا في `_classify`
-      validateStatus: (_) => true,
-      headers: const {
-        // حارسُ CSRF في الخادم يشترطها، ولا يرسلها نموذجُ HTML من موقعٍ آخر
-        'X-FALAH': '1',
-        'Accept': 'application/json',
-      },
-    ));
+    final dio = Dio(
+      BaseOptions(
+        baseUrl: Env.apiBaseUrl,
+        connectTimeout: Env.connectTimeout,
+        receiveTimeout: Env.receiveTimeout,
+        // لا نرمي على رموز الحالة: نصنّفها بأنفسنا في `_classify`
+        validateStatus: (_) => true,
+        headers: const {
+          // حارسُ CSRF في الخادم يشترطها، ولا يرسلها نموذجُ HTML من موقعٍ آخر
+          'X-FALAH': '1',
+          'Accept': 'application/json',
+        },
+      ),
+    );
     final jar = PersistCookieJar(storage: FileStorage(cookieDir));
     dio.interceptors.add(CookieManager(jar));
     return ApiClient(dio);
   }
 
-  Future<Result<Json>> get(String path,
-          {Json? query, CancelToken? cancel}) =>
-      _send(() => _dio.get(path,
+  Future<Result<Json>> get(String path, {Json? query, CancelToken? cancel}) =>
+      _send(
+        () => _dio.get(
+          path,
           queryParameters: query,
           cancelToken: cancel,
-          options: _opts()));
+          options: _opts(),
+        ),
+      );
 
-  Future<Result<Json>> post(String path,
-          {Json? body, CancelToken? cancel}) =>
-      _send(() => _dio.post(path,
+  Future<Result<Json>> post(String path, {Json? body, CancelToken? cancel}) =>
+      _send(
+        () => _dio.post(
+          path,
           data: body ?? const <String, dynamic>{},
           cancelToken: cancel,
-          options: _opts()));
+          options: _opts(),
+        ),
+      );
 
   Options _opts() => Options(headers: {'X-Request-Id': newRequestId()});
 
@@ -134,15 +143,16 @@ class ApiClient {
       404 => NotFoundFailure(msg ?? 'غير موجود'),
       413 => PayloadTooLargeFailure(msg ?? 'المحتوى أكبر من الحدّ المسموح'),
       429 => RateLimitFailure(
-          msg ?? 'محاولاتٌ كثيرةٌ — انتظر قليلًا',
-          retryAfter: _retryAfter(r),
-          requestId: rid,
-        ),
+        msg ?? 'محاولاتٌ كثيرةٌ — انتظر قليلًا',
+        retryAfter: _retryAfter(r),
+        requestId: rid,
+      ),
       // الخادمُ يردّ ٤٠٠ لأخطاء النطاق، ومنها تجاوزُ الحصّة. تُفرَّق
       // بالنصّ لأن علاجَها مختلف: الحصّةُ ترقيةٌ لا إعادةُ محاولة.
-      400 || 409 || 422 => _isQuota(msg)
-          ? QuotaFailure(msg!, requestId: rid)
-          : ValidationFailure(msg ?? 'طلبٌ غيرُ صالح', requestId: rid),
+      400 || 409 || 422 =>
+        _isQuota(msg)
+            ? QuotaFailure(msg!, requestId: rid)
+            : ValidationFailure(msg ?? 'طلبٌ غيرُ صالح', requestId: rid),
       >= 500 => ServerFailure(msg ?? 'خطأ في الخادم', rid),
       _ => UnknownFailure(msg ?? 'حدث خطأ غير متوقّع', rid),
     };

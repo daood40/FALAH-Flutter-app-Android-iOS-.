@@ -27,13 +27,13 @@ class User {
   final String role;
 
   User copyWith({String? name, String? watermark}) => User(
-        id: id,
-        email: email,
-        name: name ?? this.name,
-        watermark: watermark ?? this.watermark,
-        createdAt: createdAt,
-        role: role,
-      );
+    id: id,
+    email: email,
+    name: name ?? this.name,
+    watermark: watermark ?? this.watermark,
+    createdAt: createdAt,
+    role: role,
+  );
 
   @override
   bool operator ==(Object other) =>

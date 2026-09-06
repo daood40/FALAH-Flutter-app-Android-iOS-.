@@ -12,10 +12,7 @@ abstract interface class AuthRepository {
   /// الجلسةُ الحالية إن وُجدت. `Ok(null)` تعني: لا جلسة — وهذا ليس خطأً.
   Future<Result<User?>> currentUser();
 
-  Future<Result<User>> login({
-    required String email,
-    required String password,
-  });
+  Future<Result<User>> login({required String email, required String password});
 
   Future<Result<User>> register({
     required String email,
