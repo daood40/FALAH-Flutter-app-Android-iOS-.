@@ -30,6 +30,31 @@ final livePassword = 'Fx${_derive('ok')}9!';
 
 String liveSecret(String tag) => '8${_derive(tag)}';
 
+/// سببُ تخطٍّ **معلَنٌ** لا صامت: حارسُ الأنبوب يقبل هذا وحدَه ويُسقط البناءَ
+/// على أيِّ تخطٍّ غيره. فالفرقُ بين «لم يجرِ لسببٍ نعرفه ونقوله» و«لم يجرِ
+/// ولا ندري» هو الفرقُ بين تقريرٍ صادقٍ وخضرةٍ كاذبة.
+const noContent =
+    'DECLARED_SKIP: قاعدةُ المحتوى غيرُ متاحةٍ في هذا الاستنساخ '
+    '— اختباراتُ النصِّ الشرعيِّ غيرُ محقَّقةٍ لا ناجحة';
+
+/// هل في هذا الخادم قاعدةُ محتوًى مبنيّة؟
+///
+/// `falah.db` تُبنى من `raw/` (١٦٥ م.ب) ولا تدخل git. فالاستنساخُ النظيفُ
+/// في خطِّ التكامل يقلع بلا محتوًى: المصادقةُ تعمل، والبحثُ لا. ويُسأل
+/// الخادمُ نفسُه بدل أن يُخمَّن — `/readyz` يعلنها.
+Future<bool> contentAvailable() async {
+  try {
+    final c = HttpClient()..connectionTimeout = const Duration(seconds: 3);
+    final r = await c.getUrl(Uri.parse('${Env.apiBaseUrl}/readyz'));
+    final res = await r.close();
+    final body = await res.transform(const Utf8Decoder()).join();
+    c.close();
+    return body.contains('"content_db": true');
+  } on Object {
+    return false;
+  }
+}
+
 Future<bool> serverUp() async {
   try {
     final c = HttpClient()..connectionTimeout = const Duration(seconds: 3);

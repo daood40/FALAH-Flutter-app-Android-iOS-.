@@ -85,11 +85,21 @@ falah_app/.flutter-plugins*
 falah_app/*.iml
 falah_app/android/.gradle/
 falah_app/android/local.properties
-falah_app/android/app/*.jks
-falah_app/android/key.properties
+# مخازنُ المفاتيح **في أيِّ مكانٍ من الشجرة** لا في مجلّد أندرويد وحدَه.
+# كان النمطُ مقيَّدًا بـ`falah_app/android/app/`، فمخزنٌ يُنسخ إلى الجذر
+# لحظةَ بناءٍ عَجِلٍ كان يدخل git. ومفتاحُ الرفع الذي دخل التاريخَ لا يخرج
+# منه بحذفٍ لاحق — يُبدَّل ولا يُستدرك.
+**/*.jks
+**/*.keystore
+**/key.properties
+**/*.p12
+**/service-account*.json
 falah_app/ios/Flutter/ephemeral/
 falah_app/android/.cxx/
 falah_app/ios/Pods/
 falah_app/ios/.symlinks/
 certs/*.crt
 certs/*.pem
+
+# حزمُ git لا تدخل git: أثرٌ عن المستودع داخل المستودع، ينمو مع كلِّ توليد
+*.bundle

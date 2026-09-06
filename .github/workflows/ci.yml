@@ -256,59 +256,15 @@ jobs:
         # `--fatal-infos` مقصود: تحذيرُ اليوم عيبُ الغد، ولا يُمرَّر
         run: flutter analyze --fatal-infos
 
-      # ═══ خادمٌ حيٌّ لاختبارات الجلسة ═══
-      # دورةُ الجلسة (دخول · نجاةٌ من إغلاق التطبيق · خروج · ٤٠١ · ٤٠٣) لا
-      # تُختبر بمضاعفات: الجرّةُ على القرص وترويسةُ `Set-Cookie` سلوكُ خادمٍ
-      # حقيقيّ. وقاعدةُ المحتوى غيرُ لازمة هنا — المصادقةُ على قاعدة التطبيق
-      # وحدها، و`/healthz` يردّ قبلها.
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: تشغيل الخادم لاختبارات الجلسة
-        working-directory: .
-        run: |
-          set -euo pipefail
-          pip install --no-cache-dir -r requirements.txt
-          python3 -m falah.migrate
-          FALAH_INLINE_WORKER=0 nohup python3 app.py > /tmp/app.log 2>&1 &
-          for i in $(seq 1 60); do
-            curl -fsS http://localhost:8080/healthz >/dev/null 2>&1 && break; sleep 1; done
-          curl -fsS http://localhost:8080/healthz | grep -q '"live": true'
-
-      - name: الاختبارات — على خادمٍ حيّ
-        run: |
-          set -euo pipefail
-          flutter test --dart-define=FALAH_API=http://localhost:8080 \
-                       --reporter expanded --file-reporter json:/tmp/ft.json
-
-      # **الحارسُ الذي يمنع الخضرةَ الكاذبة.** اختبارٌ يتخطّى نفسه بلا خادم
-      # يظهر ناجحًا في السطر الأخير — و«‏All tests passed» لا تعني أنها جرت.
-      # فيُسقط الأنبوبُ إن تخطّى اختبارٌ واحد.
-      - name: لا اختبارَ متخطًّى يُمرَّر على أنه نجاح
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import json, sys
-          skipped = []
-          names = {}
-          for line in open('/tmp/ft.json'):
-              e = json.loads(line)
-              if e.get('type') == 'testStart':
-                  names[e['test']['id']] = e['test']['name']
-              if e.get('type') == 'testDone' and e.get('skipped'):
-                  skipped.append(names.get(e['testID'], e['testID']))
-          if skipped:
-              print('::error::اختباراتٌ تخطّت نفسَها — غيرُ محقَّقة لا ناجحة:')
-              for n in skipped:
-                  print(f'  ~ {n}')
-              sys.exit(1)
-          print('✓ لا اختبارَ متخطًّى')
-          PY
-
-      # ═══ منفذُ التجربة: يُبنى دائمًا، ولا يحتاج مفتاحًا ═══
-      # معرِّفُه `com.falah.app.staging` واسمُه «فَلاح (تجريبيّ)» — فلا يلتبس
-      # بالإنتاج، ولا يمكن رفعُه مكانَه (Play يعرف المعرِّفَ ولا يقبل غيره).
+      # ═══ الحزمةُ أوّلًا — قبل أيِّ شيءٍ يعتمد على الخادم ═══
+      #
+      # **الترتيبُ هنا قرارٌ لا صدفة.** كان بناءُ الحزمة بعد تشغيل الخادم،
+      # فلمّا تبيّن أنّ الخادمَ لا يقلع بلا قاعدة محتوًى (وهي ١٦٥ م.ب من
+      # الخام لا تدخل git) كانت الوظيفةُ تموت **قبل أن تُبنى الحزمة** —
+      # فلا يخرج APK من استنساخٍ نظيف. ومالكُ المشروع على هاتفٍ، وهذا
+      # الأثرُ طريقُه الوحيدةُ إلى تطبيقٍ يُثبَّت.
+      #
+      # فالحزمةُ تُبنى وتُفحص وتُرفع أوّلًا، ثم تجري الاختباراتُ الحيّة.
       - name: بناء APK التجربة
         run: flutter build apk --flavor staging --release
 
@@ -331,7 +287,58 @@ jobs:
           echo "$b" | grep -q "package: name='com.falah.app.staging'"
           echo "$b" | grep -q "versionName='[^']*-staging'"
 
-      # ═══ منفذُ الإنتاج: يُبنى فقط حين تُضاف أسرارُ التوقيع ═══
+      - name: حزمةُ التجربة — للتثبيت على جهاز
+        uses: actions/upload-artifact@v4
+        with:
+          name: falah-android-staging-apk
+          path: falah_app/build/app/outputs/flutter-apk/app-staging-release.apk
+          retention-days: 30
+
+      # ═══ الاختباراتُ الحيّة — على خادمٍ حقيقيّ ═══
+      # دورةُ الجلسة (دخول · نجاةٌ من إغلاق التطبيق · خروج · ٤٠١ · ٤٠٣) لا
+      # تُختبر بمضاعفات: الجرّةُ على القرص وترويسةُ `Set-Cookie` سلوكُ خادمٍ
+      # حقيقيّ.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: تشغيل الخادم
+        working-directory: .
+        env:
+          # الاستنساخُ النظيفُ بلا قاعدة محتوًى: يُعلَن ذلك صراحةً فيقلع
+          # الخادمُ للمصادقة وحدَها. و`/readyz` يبقى يردّ ٥٠٣ — فلا يُظنّ
+          # جاهزًا. والإنتاجُ يُبطل هذا الإعلانَ فلا يقلع بلا محتوى بحال.
+          FALAH_ALLOW_NO_CONTENT: "1"
+          FALAH_INLINE_WORKER: "0"
+        run: |
+          set -euo pipefail
+          pip install --no-cache-dir -r requirements.txt
+          python3 -m falah.migrate
+          nohup python3 app.py > /tmp/app.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -fsS http://localhost:8080/healthz >/dev/null 2>&1 && break; sleep 1; done
+          curl -fsS http://localhost:8080/healthz | grep -q '"live": true'
+          echo "قاعدةُ المحتوى:"; curl -s http://localhost:8080/readyz | grep -o '"content_db": [a-z]*'
+
+      - name: الاختبارات — على خادمٍ حيّ
+        run: |
+          set -euo pipefail
+          flutter test --dart-define=FALAH_API=http://localhost:8080 \
+                       --reporter expanded --file-reporter json:/tmp/ft.json
+
+      # **حارسُ الخضرة الكاذبة.** يفرّق بين تخطٍّ معلَنٍ وتخطٍّ صامت: الأوّل
+      # يُطبع بالاسم ويمضي، والثاني يُسقط الأنبوب. ومكتوبٌ ملفًّا مستقلًّا
+      # لا سطورًا في YAML — ما لا يُشغَّل إلا هنا لا يُختبر أبدًا، وحارسٌ
+      # معطوبٌ أسوأُ من لا حارس.
+      - name: لا تخطٍّ صامت — والمعلَنُ يُذكر بالاسم
+        working-directory: .
+        run: python3 check_skips.py /tmp/ft.json
+
+      - name: سجلُّ الخادم عند الفشل
+        if: failure()
+        run: tail -60 /tmp/app.log || true
+
+      # ═══ منفذُ الإنتاج — يُبنى فقط حين تُضاف أسرارُ التوقيع ═══
       # ولا بديلَ عنه: `bundleProductionRelease` بلا مفتاحٍ **يفشل** بحارسٍ
       # في `build.gradle.kts`، فلا تخرج حزمةٌ تبدو للمتجر وهي ليست له.
       - name: تركيبُ مفتاح الرفع من الأسرار
@@ -347,8 +354,6 @@ jobs:
             exit 0
           fi
           echo "$KS" | base64 -d > "$RUNNER_TEMP/upload.jks"
-          # التحقّقُ من المخزن قبل البناء: سرٌّ مقطوعٌ أو كلمةٌ خاطئةٌ تُكتشف
-          # هنا في ثانية، لا بعد عشرين دقيقةً من البناء
           keytool -list -keystore "$RUNNER_TEMP/upload.jks" \
                   -storepass "${{ secrets.ANDROID_STORE_PASSWORD }}" \
                   -alias "${{ secrets.ANDROID_KEY_ALIAS }}" > /dev/null
@@ -375,18 +380,10 @@ jobs:
           unzip -l "$aab" | grep -qE 'META-INF/.*\.(RSA|EC|DSA)$'
           echo "✓ AAB موقَّعةٌ بمفتاح الرفع"
 
-      # المفتاحُ لا يبقى على القرص بعد استعماله، ولو كان القرصُ مؤقّتًا
+      # المفتاحُ لا يبقى على القرص بعد استعماله، ولو فشل البناء
       - name: محوُ المفتاح
         if: always()
-        run: |
-          rm -f android/key.properties "$RUNNER_TEMP/upload.jks" || true
-
-      - name: حزمةُ التجربة — للتثبيت على جهاز
-        uses: actions/upload-artifact@v4
-        with:
-          name: falah-android-staging-apk
-          path: falah_app/build/app/outputs/flutter-apk/app-staging-release.apk
-          retention-days: 30
+        run: rm -f android/key.properties "$RUNNER_TEMP/upload.jks" || true
 
       - name: حزمةُ المتجر — للرفع إلى Play
         if: steps.signing.outputs.have_key == 'true'

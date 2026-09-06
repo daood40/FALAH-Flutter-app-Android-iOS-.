@@ -621,6 +621,24 @@ for _step in ("ruff check", "mypy", "security_scan.py", "api_contract.py --check
 check("والأنبوب يتحقّق من صلاحية الإنترنت في نسخة الإصدار",
       "android.permission.INTERNET" in _ci)
 
+# ═══ ما يدخل git وما لا يدخل ═══
+# مفتاحُ رفعٍ دخل التاريخَ لا يخرج منه بحذفٍ لاحق — يُبدَّل ولا يُستدرك.
+# فالنمطُ يشمل الشجرةَ كلَّها لا مجلّدَ أندرويد وحدَه: كان مقيَّدًا به،
+# فمخزنٌ يُنسخ إلى الجذر لحظةَ بناءٍ عَجِلٍ كان يدخل.
+_gi2 = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         ".gitignore"), encoding="utf-8").read()
+for _pat in ("**/*.jks", "**/*.keystore", "**/key.properties", "**/*.p12",
+             "**/service-account*.json", "*.p8", "*.pem"):
+    check(f"git يستبعد {_pat}", _pat in _gi2)
+# و`docs/` **لا يُستبعد**: فيه السياسةُ والشروطُ اللتان يخدمهما الخادم،
+# وأدلّةُ الإطلاق والتوقيع. استبعادُه يُفرغ المستودعَ من نصفِ قيمته.
+check("ولا يستبعد docs/",
+      not any(l.strip() in ("docs/", "docs") for l in _gi2.splitlines()
+              if not l.strip().startswith("#")))
+check("وملفّاتُ docs متتبَّعةٌ فعلًا",
+      os.path.isdir(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                 "docs")))
+
 # ═══ الوثائقُ القانونيّة ═══
 # المتجران يرفضان التطبيقَ بلا رابطٍ عامٍّ لسياسة الخصوصيّة. والوثيقةُ
 # مصدرُها Markdown واحدٌ يُصيَّر صفحةً — فلا نسختان تفترقان.

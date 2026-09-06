@@ -91,6 +91,7 @@ void main() {
 
     test('٥ · بحثٌ في القرآن ⇒ نتائجُ حقيقيّة', () async {
       if (!await serverUp()) return markTestSkipped(noServer);
+      if (!await contentAvailable()) return markTestSkipped(noContent);
       final hits = okOf(await content.searchQuran('الكوثر'));
       expect(hits, isNotEmpty);
       expect(hits.first.text, isNotEmpty);
@@ -99,6 +100,7 @@ void main() {
 
     test('٦ · بحثٌ في الحديث ⇒ ومعه الحكمُ من المصدر', () async {
       if (!await serverUp()) return markTestSkipped(noServer);
+      if (!await contentAvailable()) return markTestSkipped(noContent);
       final hits = okOf(await content.searchHadith('النية'));
       expect(hits, isNotEmpty);
       expect(hits.first.matn, isNotEmpty);
@@ -108,6 +110,7 @@ void main() {
 
     test('٧ · المصادرُ معروضةٌ بحال تراخيصها — الإسنادُ مرئيّ', () async {
       if (!await serverUp()) return markTestSkipped(noServer);
+      if (!await contentAvailable()) return markTestSkipped(noContent);
       final s = okOf(await content.sources());
       expect(s, isNotEmpty);
       expect(s.first.licenseStatus, isNotEmpty);
@@ -122,6 +125,7 @@ void main() {
 
     test('٩ · إضافةُ آيةٍ **بمرجعها لا بمتنها**', () async {
       if (!await serverUp()) return markTestSkipped(noServer);
+      if (!await contentAvailable()) return markTestSkipped(noContent);
       expect(projectId, isNotNull);
       final r = await projects.addItem(
         projectId: projectId!,
@@ -133,6 +137,7 @@ void main() {
 
     test('١٠ · فتحُ المشروع ⇒ العنصرُ باجتيازه الكامل', () async {
       if (!await serverUp()) return markTestSkipped(noServer);
+      if (!await contentAvailable()) return markTestSkipped(noContent);
       final p = okOf(await projects.open(projectId!));
       expect(p.items, isNotEmpty);
       final it = p.items.first;
@@ -145,6 +150,7 @@ void main() {
 
     test('١١ · نصٌّ غيرُ موجودٍ يُرفض بسببٍ مفهوم', () async {
       if (!await serverUp()) return markTestSkipped(noServer);
+      if (!await contentAvailable()) return markTestSkipped(noContent);
       final f = errOf(
         await projects.addItem(
           projectId: projectId!,
@@ -160,6 +166,7 @@ void main() {
 
     test('١٢ · تكرارُ النصِّ نفسِه يُرفض', () async {
       if (!await serverUp()) return markTestSkipped(noServer);
+      if (!await contentAvailable()) return markTestSkipped(noContent);
       final f = errOf(
         await projects.addItem(
           projectId: projectId!,
@@ -172,6 +179,7 @@ void main() {
 
     test('١٣ · التصديرُ يدخل الطابور ويُتابَع حتى يكتمل', () async {
       if (!await serverUp()) return markTestSkipped(noServer);
+      if (!await contentAvailable()) return markTestSkipped(noContent);
       final jobId = okOf(await projects.startExport(projectId!));
       expect(jobId, greaterThan(0));
 
@@ -190,6 +198,7 @@ void main() {
 
     test('١٤ · الوكيلُ يسأل سؤالًا محدَّدًا ولا يولّد نصًّا', () async {
       if (!await serverUp()) return markTestSkipped(noServer);
+      if (!await contentAvailable()) return markTestSkipped(noContent);
       final s = okOf(await agent.ask({}));
       expect(s.done, isFalse);
       expect(s.question, isNotNull);
@@ -200,6 +209,7 @@ void main() {
 
     test('١٥ · وإجابةٌ تتقدّم به خطوةً', () async {
       if (!await serverUp()) return markTestSkipped(noServer);
+      if (!await contentAvailable()) return markTestSkipped(noContent);
       final first = okOf(await agent.ask({}));
       final next = okOf(
         await agent.ask({first.questionId: first.options.first.value}),
@@ -216,6 +226,7 @@ void main() {
 
     test('١٧ · جدولةُ التصدير بمنطقةٍ زمنيّة', () async {
       if (!await serverUp()) return markTestSkipped(noServer);
+      if (!await contentAvailable()) return markTestSkipped(noContent);
       final s = okOf(
         await schedules.create(
           projectId: projectId!,
@@ -234,6 +245,7 @@ void main() {
 
     test('١٨ · وتظهر في السرد وتُعلَّق وتُحذف', () async {
       if (!await serverUp()) return markTestSkipped(noServer);
+      if (!await contentAvailable()) return markTestSkipped(noContent);
       var list = okOf(await schedules.list());
       expect(list, isNotEmpty);
       final id = list.first.id;
@@ -307,6 +319,7 @@ void main() {
 
     test('٢٥ · والتصفّحُ العامُّ يبقى متاحًا بلا جلسة', () async {
       if (!await serverUp()) return markTestSkipped(noServer);
+      if (!await contentAvailable()) return markTestSkipped(noContent);
       // مساراتُ المحتوى عامّة — والتصفّحُ لا يشترط حسابًا
       final hits = okOf(await content.searchQuran('الكوثر'));
       expect(hits, isNotEmpty);

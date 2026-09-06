@@ -486,8 +486,24 @@ def check_config():
     prod = os.environ.get("FALAH_ENV", "development").strip().lower() in ("production", "prod")
     fatal, warn = [], []
 
+    # قاعدةُ المحتوى تُبنى من `raw/` (١٦٥ م.ب) ولا تدخل git، فالاستنساخُ
+    # النظيفُ في خطِّ التكامل لا يملكها. واختباراتُ المصادقةِ لا تحتاجها.
+    #
+    # فيُتاح إقلاعٌ **بلا محتوى** بإعلانٍ صريح، ولا يُخمَّن. وليس هذا تخفيفًا
+    # لحارسٍ إنتاجيّ: الافتراضُ لم يتغيّر، و`FALAH_ENV=production` يُبطل
+    # الإعلانَ فلا يُقلع خادمُ إنتاجٍ بلا محتوى بحال. و`/readyz` يبقى يردّ
+    # `content_db: false` ⇒ `ready: false` ⇒ ٥٠٣ — فلا يُظنّ الخادمُ جاهزًا
+    # ولا يُوجَّه إليه حركةٌ حقيقيّة.
+    allow_no_content = (
+        os.environ.get("FALAH_ALLOW_NO_CONTENT", "0") == "1" and not prod
+    )
     if not os.path.exists(DB):
-        fatal.append(f"قاعدة المحتوى غير موجودة ({os.path.basename(DB)}) — شغّل `make db`")
+        msg = f"قاعدة المحتوى غير موجودة ({os.path.basename(DB)}) — شغّل `make db`"
+        if allow_no_content:
+            warn.append(msg + " · FALAH_ALLOW_NO_CONTENT=1 ⇒ "
+                        "مسارات المحتوى لن تعمل و/readyz سيردّ ٥٠٣")
+        else:
+            fatal.append(msg)
     for f in (UI, DEMO):
         if not os.path.exists(f):
             fatal.append(f"ملفُّ واجهةٍ مفقود: {os.path.basename(f)}")
