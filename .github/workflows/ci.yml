@@ -306,45 +306,95 @@ jobs:
           print('✓ لا اختبارَ متخطًّى')
           PY
 
-      - name: بناء APK
-        run: flutter build apk --release
+      # ═══ منفذُ التجربة: يُبنى دائمًا، ولا يحتاج مفتاحًا ═══
+      # معرِّفُه `com.falah.app.staging` واسمُه «فَلاح (تجريبيّ)» — فلا يلتبس
+      # بالإنتاج، ولا يمكن رفعُه مكانَه (Play يعرف المعرِّفَ ولا يقبل غيره).
+      - name: بناء APK التجربة
+        run: flutter build apk --flavor staging --release
 
-      - name: بناء AAB
-        run: flutter build appbundle --release
-
-      # التوقيعُ: بلا أسرارٍ تخرج حزمةٌ موسومةٌ `-debugsigned` صراحةً،
-      # فلا يسقط الأنبوبُ ولا يُدَّعى أنّ حزمتَه جاهزةٌ للمتجر.
-      # راجع docs/RELEASE_SIGNING.md.
-      - name: هل الحزمةُ موقَّعةٌ للمتجر؟ — يُعلَن ولا يُخفى
-        run: |
-          set -euo pipefail
-          aapt2=$(ls "$ANDROID_HOME"/build-tools/*/aapt2 | tail -1)
-          ver=$("$aapt2" dump badging build/app/outputs/flutter-apk/app-release.apk \
-                | sed -n "s/.*versionName='\([^']*\)'.*/\1/p")
-          echo "versionName = $ver"
-          case "$ver" in
-            *-debugsigned)
-              echo "::warning::لا مفتاحَ رفع — موقَّعةٌ بمفتاح تصحيحٍ و Play يرفضها."
-              echo "::warning::راجع docs/RELEASE_SIGNING.md" ;;
-            *) echo "✓ موقَّعةٌ بمفتاح الرفع" ;;
-          esac
-
-      - name: صلاحيةُ الإنترنت موجودةٌ في نسخة الإصدار
+      - name: صلاحيةُ الإنترنت موجودةٌ في الحزمة
         # عيبٌ وقع فعلًا: Flutter يضيفها لمنافستَي التصحيح والتشخيص فقط،
         # فكانت نسخةُ الإصدار تُفتح ولا تصل الخادمَ أبدًا وبلا رسالةِ خطأ.
         run: |
           set -euo pipefail
           aapt2=$(ls "$ANDROID_HOME"/build-tools/*/aapt2 | tail -1)
-          "$aapt2" dump permissions build/app/outputs/flutter-apk/app-release.apk \
+          "$aapt2" dump permissions \
+            build/app/outputs/flutter-apk/app-staging-release.apk \
             | grep -q 'android.permission.INTERNET'
 
-      - uses: actions/upload-artifact@v4
+      - name: وهُويّتُه تقول إنه تجريبيّ
+        run: |
+          set -euo pipefail
+          aapt2=$(ls "$ANDROID_HOME"/build-tools/*/aapt2 | tail -1)
+          b=$("$aapt2" dump badging build/app/outputs/flutter-apk/app-staging-release.apk)
+          echo "$b" | head -1
+          echo "$b" | grep -q "package: name='com.falah.app.staging'"
+          echo "$b" | grep -q "versionName='[^']*-staging'"
+
+      # ═══ منفذُ الإنتاج: يُبنى فقط حين تُضاف أسرارُ التوقيع ═══
+      # ولا بديلَ عنه: `bundleProductionRelease` بلا مفتاحٍ **يفشل** بحارسٍ
+      # في `build.gradle.kts`، فلا تخرج حزمةٌ تبدو للمتجر وهي ليست له.
+      - name: تركيبُ مفتاح الرفع من الأسرار
+        id: signing
+        env:
+          KS: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KS:-}" ]; then
+            echo "have_key=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::لا أسرارَ توقيع — يُبنى منفذُ التجربة وحدَه."
+            echo "::notice::راجع docs/RELEASE_SIGNING.md لإضافتها."
+            exit 0
+          fi
+          echo "$KS" | base64 -d > "$RUNNER_TEMP/upload.jks"
+          # التحقّقُ من المخزن قبل البناء: سرٌّ مقطوعٌ أو كلمةٌ خاطئةٌ تُكتشف
+          # هنا في ثانية، لا بعد عشرين دقيقةً من البناء
+          keytool -list -keystore "$RUNNER_TEMP/upload.jks" \
+                  -storepass "${{ secrets.ANDROID_STORE_PASSWORD }}" \
+                  -alias "${{ secrets.ANDROID_KEY_ALIAS }}" > /dev/null
+          cat > android/key.properties <<EOF
+          storePassword=${{ secrets.ANDROID_STORE_PASSWORD }}
+          keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
+          keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
+          storeFile=$RUNNER_TEMP/upload.jks
+          EOF
+          echo "have_key=true" >> "$GITHUB_OUTPUT"
+          echo "✓ مفتاحُ الرفع مركَّبٌ ومُتحقَّقٌ منه"
+
+      - name: بناء AAB للمتجر
+        if: steps.signing.outputs.have_key == 'true'
+        run: flutter build appbundle --flavor production --release
+
+      - name: التأكّدُ أنّ الحزمةَ موقَّعةٌ فعلًا لا مجرّدَ مبنيّة
+        if: steps.signing.outputs.have_key == 'true'
+        run: |
+          set -euo pipefail
+          aab=build/app/outputs/bundle/productionRelease/app-production-release.aab
+          test -f "$aab"
+          # حزمةٌ بلا `META-INF/*.RSA` غيرُ موقَّعة — والبناءُ ينجح بدونها
+          unzip -l "$aab" | grep -qE 'META-INF/.*\.(RSA|EC|DSA)$'
+          echo "✓ AAB موقَّعةٌ بمفتاح الرفع"
+
+      # المفتاحُ لا يبقى على القرص بعد استعماله، ولو كان القرصُ مؤقّتًا
+      - name: محوُ المفتاح
+        if: always()
+        run: |
+          rm -f android/key.properties "$RUNNER_TEMP/upload.jks" || true
+
+      - name: حزمةُ التجربة — للتثبيت على جهاز
+        uses: actions/upload-artifact@v4
         with:
-          name: falah-android
-          path: |
-            falah_app/build/app/outputs/flutter-apk/app-release.apk
-            falah_app/build/app/outputs/bundle/release/app-release.aab
-          retention-days: 14
+          name: falah-android-staging-apk
+          path: falah_app/build/app/outputs/flutter-apk/app-staging-release.apk
+          retention-days: 30
+
+      - name: حزمةُ المتجر — للرفع إلى Play
+        if: steps.signing.outputs.have_key == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: falah-android-production-aab
+          path: falah_app/build/app/outputs/bundle/productionRelease/app-production-release.aab
+          retention-days: 90
 
   # ═══════════ ٥ · بوّابة الجودة ═══════════
   # وظيفةٌ واحدة تُلخّص الكلّ، وهي التي تُشترط في حماية الفرع. بلا هذه

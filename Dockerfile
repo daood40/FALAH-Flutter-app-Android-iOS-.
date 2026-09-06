@@ -6,6 +6,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 \
       libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libasound2 sqlite3 curl \
  && rm -rf /var/lib/apt/lists/*
+# شهاداتٌ إضافيّةٌ للشبكات التي تعترض TLS (وسيطُ مؤسّسةٍ أو جدارُ حماية).
+# المجلَّدُ فارغٌ افتراضيًّا فلا تتغيّر ثقةُ الصورة بشيء؛ ومن وضع فيه `.crt`
+# نجح بناؤه من خلف وسيطه. **وليس تخفيفًا للتحقّق**: الشهادةُ تُضاف إلى
+# المخزن ولا يُعطَّل التحقّقُ بحال — لا `--trusted-host` ولا `verify=False`.
+COPY certs/ /usr/local/share/ca-certificates/falah-extra/
+RUN update-ca-certificates \
+ && printf '[global]\ncert = /etc/ssl/certs/ca-certificates.crt\n' > /etc/pip.conf
+ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
+    SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
+    NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
+
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt && playwright install chromium
 

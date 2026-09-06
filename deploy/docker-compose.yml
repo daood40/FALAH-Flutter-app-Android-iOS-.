@@ -50,6 +50,44 @@ services:
       start_period: 20s
       retries: 3
 
+  # ── النسخُ الاحتياطيُّ خدمةٌ لا تذكيرٌ في وثيقة ──
+  # كان `backup.sh` يُترك للمالك يضعه في cron، وهذا يعني عمليًّا أنه لا
+  # يجري: من نسي سطرًا في cron لا يكتشف نسيانَه إلا يومَ يحتاج النسخة.
+  # فصار خدمةً تُقلع مع الباقي وتنسخ كلَّ يومٍ في الثالثة فجرًا.
+  #
+  # وتقرأ القاعدةَ من الحجم نفسِه للقراءة فقط: نسخُ SQLite الآمنُ يعمل
+  # والخدمةُ شغّالة (WAL)، فلا توقُّفَ ولا تعارض.
+  backup:
+    build: ..
+    restart: unless-stopped
+    depends_on: [app]
+    environment:
+      FALAH_APP_DB: /data/app.db
+      # عددُ النسخ المحفوظة. أربعةَ عشرَ يومًا: يكفي لاكتشاف عطبٍ صامتٍ
+      # يظهر بعد أسبوع، ولا يملأ القرص.
+      KEEP: "${FALAH_BACKUP_KEEP:-14}"
+    volumes:
+      - falah-data:/data
+      - falah-backups:/backups
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while true; do
+          # الانتظارُ حتى الثالثة فجرًا بتوقيت الخادم، لا كلَّ ٢٤ ساعةً من
+          # لحظة الإقلاع: الأخيرةُ تنزلق فتصير النسخةُ وقتَ الذروة.
+          now=$$(date +%s); next=$$(date -d 'tomorrow 03:00' +%s 2>/dev/null || echo $$((now+86400)))
+          sleep $$((next - now))
+          sh deploy/backup.sh /backups "$$KEEP" || echo "✗ فشل النسخ الاحتياطيّ" >&2
+        done
+    healthcheck:
+      # نسخةٌ واحدةٌ على الأقلّ خلال ٤٨ ساعة، وإلّا فالخدمةُ «تعمل» ولا تنسخ
+      test: ["CMD", "sh", "-c",
+             "find /backups -name 'app-*.db.gz' -mmin -2880 | grep -q . || [ ! -f /backups/.started ]"]
+      interval: 6h
+      timeout: 10s
+      start_period: 26h
+      retries: 2
+
   proxy:
     image: caddy:2-alpine
     restart: unless-stopped
@@ -65,5 +103,6 @@ services:
 volumes:
   falah-data:
   falah-exports:
+  falah-backups:
   caddy-data:
   caddy-config:

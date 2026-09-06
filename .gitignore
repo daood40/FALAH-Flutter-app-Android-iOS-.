@@ -91,3 +91,5 @@ falah_app/ios/Flutter/ephemeral/
 falah_app/android/.cxx/
 falah_app/ios/Pods/
 falah_app/ios/.symlinks/
+certs/*.crt
+certs/*.pem

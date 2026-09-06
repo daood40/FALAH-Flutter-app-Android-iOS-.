@@ -38,6 +38,10 @@ def app_routes():
 SPEC = {
   # المسار: (الطريقة، الصلاحية، المدخل، المخرج، الأخطاء)
   "/healthz":  ("GET",  "عامّ", "—", "{live}", "—"),
+  # الوثائقُ القانونيّةُ عامّةٌ عمدًا: المتجران يفتحان الرابطَ بلا حساب،
+  # ومراجعٌ يلقى ٤٠١ يرفض التطبيق.
+  "/privacy":  ("GET",  "عامّ", "—", "سياسة الخصوصيّة (HTML)", "404 غير منشورة"),
+  "/terms":    ("GET",  "عامّ", "—", "شروط الاستخدام (HTML)", "404 غير منشورة"),
   "/readyz":   ("GET",  "عامّ", "—", "{ready, content_db, app_db, queue, pending_migrations}",
                 "503 غير جاهز"),
   "/health":   ("GET",  "عامّ", "—", "إحصاء القاعدة", "—"),
@@ -164,7 +168,7 @@ def frontend_calls():
                   | {m.split("?")[0] for m in re.findall(r'["\'](/[a-z]+)\?', src)})
 
 def build():
-    live = content_routes() + ["/healthz", "/readyz"]
+    live = content_routes() + ["/healthz", "/readyz", "/privacy", "/terms"]
     reads, writes = app_routes()
     return live, reads, writes
 

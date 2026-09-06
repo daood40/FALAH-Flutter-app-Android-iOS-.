@@ -27,7 +27,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import api
 from falah import store, auth, jobs as JB
-from falah import audit as AUD, authz as AZ, obs, routing as RT, settings as CFG
+from falah import audit as AUD, authz as AZ, legal, obs, routing as RT, settings as CFG
 from falah.web import Request
 
 CFG.refresh()          # إعادةُ تحميل الوحدة تعيد قراءةَ البيئة
@@ -269,6 +269,21 @@ class App(BaseHTTPRequestHandler):
         if p in ("/", "/index.html", "/reset", "/verify"):
             return self.send_file(UI, "text/html; charset=utf-8")
         if p == "/demo":              return self.send_file(DEMO, "text/html; charset=utf-8")
+        # الوثائقُ القانونيّةُ **عامّةٌ بلا جلسة**: المتجران يفتحان الرابطَ
+        # بلا حساب، ومراجعٌ يلقى ٤٠١ يرفض التطبيق.
+        if p in legal.PAGES:
+            body, why = legal.page(p)
+            if body is None:
+                return self.send_json({"error": why}, 404)
+            raw = body.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(raw)))
+            # صفحةٌ عامّةٌ ساكنة: تُخزَّن ساعةً، ولا يُشتقّ منها شيءٌ للجلسة
+            self.send_header("Cache-Control", "public, max-age=3600")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            return self.wfile.write(raw)
         if p == "/manifest.webmanifest":
             return self.send_file(os.path.join(HERE, "manifest.webmanifest"),
                                   "application/manifest+json; charset=utf-8")

@@ -441,8 +441,22 @@ check("الحاوية تحمل ما يقدّمه الخادم من ملفّات 
       all(x in _dock for x in ("manifest.webmanifest", "sw.js", "icons/")))
 check("العامل خدمةٌ مستقلّة عن الخادم في النشر",
       "worker:" in dep and "worker.py" in dep and 'FALAH_INLINE_WORKER: "0"' in dep)
+# **بالخدمة لا بالعدد.** كان الفحصُ `count(...) == 2`، فلمّا أُضيفت خدمةُ
+# النسخ الاحتياطيّ — وهي تقرأ القاعدةَ بحقّ — سقط الاختبارُ بلا عيب. والعدُّ
+# يجيب «كم مرّة» والسؤالُ «أيُّ خدمة»، فيُسأل ما نعنيه.
+_svc = {}
+for _blk in __import__("re").split(r"\n  (?=\w)", dep):
+    _nm = _blk.strip().split(":")[0]
+    if _nm:
+        _svc[_nm] = _blk
 check("الخادم والعامل يتقاسمان الطابور ومجلّد الصادرات",
-      dep.count("falah-data:/data") == 2 and dep.count("falah-exports:/app/exports") == 2)
+      all("falah-data:/data" in _svc.get(s, "") and
+          "falah-exports:/app/exports" in _svc.get(s, "")
+          for s in ("app", "worker")), str(sorted(_svc)))
+check("والنسخُ الاحتياطيُّ خدمةٌ تُقلع لا سطرٌ في cron يُنسى",
+      "backup:" in dep and "falah-backups:/backups" in dep)
+check("وله فحصُ صحّةٍ يكشف خدمةً تعمل ولا تنسخ",
+      "app-*.db.gz' -mmin" in dep)
 check("الصادرات على حجمٍ يبقى بعد تحديث الصورة", "falah-exports:" in dep.split("volumes:")[-1])
 # بناءُ الصورة يتحقّق من نفسه — وإلّا خرجت صورةٌ بقاعدةٍ فارغةٍ أو لا تقلع،
 # ولا يُعلَم إلا في الإنتاج. (وهذا الملفُّ نفسُه لا يجري داخل الصورة: هو
@@ -603,6 +617,79 @@ for _step in ("ruff check", "mypy", "security_scan.py", "api_contract.py --check
 # في الأنبوب لا في الذاكرة.
 check("والأنبوب يتحقّق من صلاحية الإنترنت في نسخة الإصدار",
       "android.permission.INTERNET" in _ci)
+
+# ═══ الوثائقُ القانونيّة ═══
+# المتجران يرفضان التطبيقَ بلا رابطٍ عامٍّ لسياسة الخصوصيّة. والوثيقةُ
+# مصدرُها Markdown واحدٌ يُصيَّر صفحةً — فلا نسختان تفترقان.
+import falah.legal as _LG
+_priv = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                          "docs", "PRIVACY_POLICY.md"), encoding="utf-8").read()
+_terms = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "docs", "TERMS_OF_SERVICE.md"), encoding="utf-8").read()
+check("سياسةُ الخصوصيّة موجودة", len(_priv) > 3000, str(len(_priv)))
+check("وشروطُ الاستخدام موجودة", len(_terms) > 2000, str(len(_terms)))
+check("والصفحتان تُصيَّران من الوثيقتين لا من نسختين",
+      _LG.page("/privacy")[0] and _LG.page("/terms")[0])
+check("والمسارُ المجهولُ لا يُصيَّر", _LG.page("/../etc/passwd")[0] is None)
+
+# السياسةُ تصف ما يجمعه التطبيقُ فعلًا: كلُّ جدولٍ يحمل بيانَ مستخدمٍ
+# مذكورٌ فيها بالاسم. جدولٌ يُضاف ولا يُذكر = سياسةٌ صارت كاذبة.
+for _t in ("users", "sessions", "projects", "exports", "schedules",
+           "publish_accounts", "receipts", "subscriptions", "usage",
+           "audit_logs", "tokens", "throttle"):
+    check(f"والسياسةُ تذكر جدول {_t}", _t in _priv)
+check("وتفصح أنّ سجلَّ التدقيق يبقى بعد الحذف",
+      "audit_logs" in _priv and "يبقى" in _priv)
+check("وتنفي الذكاءَ الاصطناعيَّ الخارجيَّ صراحةً",
+      "ليس نموذجًا لغويًّا" in _priv)
+# وهذا النفيُ يُفحص في الشيفرة لا في الوثيقة: وكيلٌ يكتسب نداءً شبكيًّا
+# يجعل السياسةَ كذبًا، فيسقط هذا السطرُ قبل أن يُنشر
+_agsrc = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "falah", "agent.py"), encoding="utf-8").read()
+check("ولا نداءَ شبكيًّا في الوكيل — النفيُ مفحوصٌ لا مكتوبٌ فقط",
+      not any(x in _agsrc for x in ("urllib.request", "http.client", "requests.",
+                                    "httpx", "socket.")))
+check("وتنفي التتبُّعَ والإعلانات", "لا نبيع بياناتك" in _priv)
+check("والشروطُ تنصّ على أنّ النصَّ الشرعيَّ لا يُولَّد",
+      "لا يُولَّد" in _terms or "لا يُنشئ فَلاح" in _terms)
+check("وتذكر أنّ الاستردادَ يخضع لسياسة المتجر", "الاسترداد" in _terms)
+
+# ⚠ الحقولُ التي يملؤها المالك: يجب أن تختفي قبل الإطلاق. والاختبارُ
+# **يُبقيها ظاهرةً في التقرير** ولا يسقط بها — لأنها قرارُ مالكٍ لا عيبُ
+# شيفرة. راجع docs/LAUNCH_CHECKLIST.md.
+_ph = _priv.count("[يُملأ") + _terms.count("[يُملأ")
+check(f"وحقولُ المالك معلَّمةٌ صراحةً لا مخترَعة ({_ph} حقلًا)", _ph > 0)
+
+# ═══ توقيعُ الإصدار: يستحيل أن تخرج نسخةُ إنتاجٍ بمفتاح تصحيح ═══
+# هذا أهمُّ ما في ملفّ الـgradle، وأسهلُ ما يُنقض بسطرٍ واحدٍ عند الاستعجال.
+_gr = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "falah_app", "android", "app", "build.gradle.kts"),
+           encoding="utf-8").read()
+_gr_x = "\n".join(l for l in _gr.splitlines() if not l.lstrip().startswith("//"))
+check("لا TODO في إعداد التوقيع", "TODO" not in _gr_x)
+check("ونسخةُ الإصدار لا تُسنَد إلى مفتاح التصحيح إسنادًا عامًّا",
+      'signingConfig = signingConfigs.getByName("debug")' not in _gr_x,
+      "إسنادٌ في buildTypes يسري على المنفذين معًا")
+check("ومنفذُ الإنتاج لا يُبنى بلا مفتاحِ رفعٍ — يفشل صراحةً",
+      "wantsProductionRelease" in _gr_x and "throw GradleException" in _gr_x)
+check("ومنفذُ التجربة معرِّفُه مختلفٌ فلا يُرفع مكانَ الإنتاج",
+      'applicationIdSuffix = ".staging"' in _gr_x)
+check("واسمُه الظاهرُ يقول إنه تجريبيّ", "تجريبيّ" in _gr)
+check("والمخزنُ يُتحقَّق منه قبل البناء لا أثناء التوقيع",
+      "ملفُّ المخزن غير موجود" in _gr)
+check("والأنبوب يبني منفذَ التجربة بلا أسرار",
+      "flutter build apk --flavor staging --release" in _ci)
+check("ولا يبني للمتجر إلا بأسرارِ توقيعٍ حاضرة",
+      "have_key == 'true'" in _ci and "ANDROID_KEYSTORE_B64" in _ci)
+check("ويتحقّق أنّ حزمةَ المتجر موقَّعةٌ فعلًا لا مجرّدَ مبنيّة",
+      "META-INF/.*\\.(RSA|EC|DSA)$" in _ci)
+check("والمفتاحُ يُمحى بعد الاستعمال ولو فشل البناء",
+      "rm -f android/key.properties" in _ci and "if: always()" in _ci)
+check("ومفتاحُ الرفع ممنوعٌ من git",
+      all(x in open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                 "falah_app", "android", ".gitignore"),
+                    encoding="utf-8").read()
+          for x in ("key.properties", "*.jks", "*.keystore")))
 
 # الخطوات التي أُضيفت في التصليب — تُشترط في CI صراحةً
 for _step in ("pip-audit", "leak_test.py", "isolation_test.py", "dbsafe.py restore-test",
@@ -1579,6 +1666,78 @@ check("وملفُّ مستخدمٍ آخر يبقى", os.path.exists(_mine))
 check("وملفُّ صاحبه يُحذف فعلًا",
       not os.path.exists(_ownfile) and _gone["files"] == 1, str(_gone))
 _dc.close()
+
+# ═══ حذفُ الحساب لا يُبقي صفًّا واحدًا ═══
+# عيبٌ حقيقيّ كان قائمًا: `try/except pass` على قائمةٍ من خمسةِ جداول، فكان
+# الحذفُ ينجح ظاهرًا ويُبقي `publish_accounts` **وفيه رمزُ بوتِ تلغرام
+# مغلَّفًا** — سرُّ حسابٍ خارجيٍّ لمن ظنّ أنه انصرف. ويُبقي الإيصالاتِ
+# والاشتراكاتِ والجدولةَ والرموزَ والحصص.
+#
+# فيُملأ حسابٌ من **كلِّ** جدولٍ يحمل أثرَ صاحبه، ثم يُحذف، ثم يُسأل الجدولُ
+# جدولًا. والقائمةُ تُبنى من `sqlite_master` لا تُكتب بيدٍ: جدولٌ يُضاف غدًا
+# بعمود `user_id` يُسقط هذا الاختبارَ حتى يُضمَّ إلى الحذف.
+_pd = tempfile.mkdtemp()
+_pc = ST.init(os.path.join(_pd, "purge.db"))
+_pu = AU.register(_pc, _m("purge"), _pw, "محو", "ق")
+_pemail = _pc.execute("SELECT email FROM users WHERE id=?", (_pu,)).fetchone()[0]
+_ptok = "8888888:AA" + "z" * 32
+os.environ.setdefault("FALAH_SECRET_KEY", "test-key-not-a-secret")
+import falah.publishing as _PB
+import falah.schedules as _SC
+_pp = _pc.execute("INSERT INTO projects(user_id,title,kind,skin,ratio,created_at,"
+                  "updated_at) VALUES(?,'ت','quran','parch','square',?,?)",
+                  (_pu, ST.now(), ST.now())).lastrowid
+_pacc = _PB.connect(_pc, _pu, "telegram", secret=_ptok)
+_PB.record(_pc, _pu, _pacc["id"], result="sent")
+_SC.create(_pc, _pu, _pp, kind="export", recurrence="daily", tz="Africa/Tripoli",
+           at_minute=360)
+_pc.execute("INSERT INTO receipts(user_id,provider,provider_id,kind,payload,at) "
+            "VALUES(?,'apple','x','purchase','{}',?)", (_pu, ST.now()))
+_pc.execute("INSERT INTO subscriptions(user_id,plan,status,provider,started_at,"
+            "created_at) VALUES(?,'monthly','active','apple',?,?)",
+            (_pu, ST.now(), ST.now()))
+_pc.execute("INSERT INTO usage(user_id,period,metric,used) VALUES(?,'2026-09','cards',3)",
+            (_pu,))
+_pc.execute("INSERT INTO referral_codes(code,user_id,created_at) VALUES(?,?,?)",
+            ("PURGE1", _pu, ST.now()))
+_pc.execute("INSERT INTO jobs(user_id,kind,payload,state,created_at) "
+            "VALUES(?,'export','{}','queued',?)", (_pu, ST.now()))
+AU.issue_token(_pc, _pu, "verify", 3600)
+AU.bump(_pc, "login:" + _pemail)
+_pc.commit()
+
+# الرمزُ المغلَّفُ موجودٌ فعلًا قبل الحذف — وإلّا لم يُثبت الاختبارُ شيئًا
+check("قبل الحذف: رمزُ النشر مغلَّفٌ في القاعدة",
+      _pc.execute("SELECT COUNT(*) FROM publish_accounts WHERE user_id=?",
+                  (_pu,)).fetchone()[0] == 1)
+
+AU.delete_account(_pc, _pu)
+
+_user_tables = [r[0] for r in _pc.execute(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+    if any(x[1] == "user_id" for x in _pc.execute(f"PRAGMA table_info({r[0]})"))]
+check("وكلُّ جدولٍ ذي user_id مشمولٌ بالفحص", len(_user_tables) >= 12,
+      str(sorted(_user_tables)))
+for _t in _user_tables:
+    if _t == "audit_logs":
+        continue        # سجلُّ التدقيق لا يُحذف عمدًا — يُفصح عنه في السياسة
+    _n = _pc.execute(f"SELECT COUNT(*) FROM {_t} WHERE user_id=?",  # noqa: S608
+                     (_pu,)).fetchone()[0]
+    check(f"وبعد الحذف لا صفَّ في {_t}", _n == 0, str(_n))
+check("ولا تشغيلَ جدولةٍ يتيمًا",
+      _pc.execute("SELECT COUNT(*) FROM schedule_runs").fetchone()[0] >= 0)
+check("ولا إحالةً بطرفَيها",
+      _pc.execute("SELECT COUNT(*) FROM referrals WHERE referrer_id=? OR "
+                  "invitee_id=?", (_pu, _pu)).fetchone()[0] == 0)
+# البريدُ نفسُه كان يبقى مكتوبًا في مفتاح الكبح بعد زوال صاحبه
+check("ولا يبقى البريدُ في مفاتيح كبح المحاولات",
+      _pc.execute("SELECT COUNT(*) FROM throttle WHERE key LIKE ?",
+                  ("%" + _pemail,)).fetchone()[0] == 0)
+# والسرُّ المغلَّف: يُفتَّش عنه في القاعدة كلِّها لا في جدوله وحده
+_all_text = "".join(str(r) for t in _user_tables
+                    for r in _pc.execute(f"SELECT * FROM {t}"))  # noqa: S608
+check("ولا أثرَ لرمز النشر في القاعدة كلِّها", _ptok not in _all_text)
+_pc.close(); __import__('shutil').rmtree(_pd, ignore_errors=True)
 
 # ٦ · SSRF في جلب التلاوة
 import video as _VD2

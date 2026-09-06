@@ -175,9 +175,37 @@ def delete_account(c, user_id, export_dir=None):
     if pids:
         q = ",".join("?" * len(pids))
         c.execute(f"DELETE FROM project_items WHERE project_id IN ({q})", pids)
-    for t in ("exports", "projects", "sessions", "events", "throttle"):
-        try:    c.execute(f"DELETE FROM {t} WHERE user_id=?", (user_id,))
-        except Exception: pass          # جدولٌ بلا عمود user_id يُتخطّى
+    # ــــ جداولُ الحساب بالاسم، واحدًا واحدًا ــــ
+    #
+    # كان هنا `try/except pass` على قائمةٍ من خمسةِ جداول، وهو أسوأُ شكلٍ
+    # للخطأ: ينجح الحذفُ ظاهرًا ويترك وراءه `publish_accounts` وفيه **رمزُ
+    # بوتِ تلغرام مغلَّفًا** — سرُّ حسابٍ خارجيٍّ لمن حذف حسابَه وظنّ أنه
+    # انصرف. ويترك `receipts` و`subscriptions` و`schedules` و`tokens`
+    # و`usage`. والصمتُ كان يضمن ألّا يُعرف: جدولٌ نُسي لا يرفع صوتًا.
+    #
+    # فلا `except` بعد اليوم. وجدولٌ زال أو تغيّر عمودُه يُسقط الحذفَ بصوتٍ
+    # عالٍ — لأنّ حذفًا ناقصًا صامتًا أسوأُ من حذفٍ يفشل ويُصلَح.
+    email = (c.execute("SELECT email FROM users WHERE id=?",
+                       (user_id,)).fetchone() or [""])[0]
+
+    # تشغيلاتُ الجدولة تُعرف بجدولها لا بصاحبها — فتُحذف قبل أن يزول الأب
+    c.execute("""DELETE FROM schedule_runs WHERE schedule_id IN
+                 (SELECT id FROM schedules WHERE user_id=?)""", (user_id,))
+    for t in ("schedules",
+              "publish_attempts", "publish_accounts",   # النشر — وفيه سرٌّ
+              "exports", "projects",
+              "receipts", "subscriptions", "usage",     # المال والحصص
+              "referral_codes",
+              "jobs", "tokens", "sessions", "events"):
+        c.execute(f"DELETE FROM {t} WHERE user_id=?", (user_id,))  # noqa: S608
+    # الإحالةُ طرفان، وكلاهما عمودٌ قائمٌ بذاته
+    c.execute("DELETE FROM referrals WHERE referrer_id=? OR invitee_id=?",
+              (user_id, user_id))
+    # ومفتاحُ كبح المحاولات بالبريد لا بالمعرِّف — ولولا حذفُه لبقي البريدُ
+    # مكتوبًا في القاعدة بعد زوال صاحبه
+    if email:
+        c.execute("DELETE FROM throttle WHERE key IN (?,?)",
+                  ("login:" + email, "reset:" + email))
     c.execute("DELETE FROM users WHERE id=?", (user_id,))
     c.commit()
     removed = 0

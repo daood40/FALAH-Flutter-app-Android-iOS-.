@@ -29,6 +29,8 @@
 | GET | `/verify` | عامّ | text, surah, ayah | نتيجة الفحوص | 400 |
 | GET | `/healthz` | عامّ | — | {live} | — |
 | GET | `/readyz` | عامّ | — | {ready, content_db, app_db, queue, pending_migrations} | 503 غير جاهز |
+| GET | `/privacy` | عامّ | — | سياسة الخصوصيّة (HTML) | 404 غير منشورة |
+| GET | `/terms` | عامّ | — | شروط الاستخدام (HTML) | 404 غير منشورة |
 
 ## التطبيق — قراءة
 
