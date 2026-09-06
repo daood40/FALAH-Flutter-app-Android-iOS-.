@@ -1,0 +1,60 @@
+name: falah_app
+description: "فَلاح — بطاقاتٌ ومقاطعُ من نصٍّ شرعيٍّ موثَّقِ الإسناد."
+publish_to: "none"
+
+# النسخةُ ورقمُ البناء. الرقمُ الثاني هو versionCode في أندرويد، ولا يجوز
+# أن ينقص بين إصدارين — المتجرُ يرفض. يُرفع مع كل رفعٍ للمتجر.
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.10.0
+
+# القاعدة: لا تُضاف حزمةٌ إلا وسببُها مكتوبٌ بجانبها، وإصداراتُها مثبَّتةٌ
+# بحدٍّ أدنى معلوم. وما تكفيه المكتبةُ القياسية لا يُستورَد له طرفٌ ثالث.
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:                # توطينُ ودجات المادّة والتاريخ للعربية
+    sdk: flutter
+
+  # ── الحالة والتنقّل ──
+  flutter_riverpod: ^3.0.4              # حالةٌ صريحةٌ قابلةٌ للاختبار بلا سياق
+  go_router: ^17.2.1                    # مسارٌ معلَنٌ + حرّاسٌ حقيقيّون
+
+  # ── الشبكة ──
+  dio: ^5.9.0                           # اعتراضٌ ومهلةٌ وإلغاءٌ في مكانٍ واحد
+  cookie_jar: ^4.0.8                    # الجلسةُ كعكةٌ — كما يفرضها الخادم
+  dio_cookie_manager: ^3.4.0            # يربط الجرّةَ بـdio
+  path_provider: ^2.1.6                 # مسارُ الجرّة الدائم على الجهاز
+
+  # ── التخزين ──
+  flutter_secure_storage: ^9.2.4        # Keystore/Keychain — لا SharedPreferences للأسرار
+  shared_preferences: ^2.5.3            # التفضيلاتُ وحدها: السمة، حجمُ الخطّ
+
+  # ── العرض ──
+  intl: ^0.20.2                         # الأرقامُ والتواريخُ بالعربية
+  cached_network_image: ^3.4.1          # صورُ التصدير: تُجلب مرّةً وتُخزَّن
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  mocktail: ^1.0.4                      # مضاعفاتُ الاختبار — للاختبار وحده
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/fonts/
+  fonts:
+    # الخطوطُ نفسُها التي يُصيَّر بها على الخادم — فلا يختلف ما يراه
+    # المستخدمُ في المعاينة عمّا يخرج في البطاقة.
+    - family: Amiri
+      fonts:
+        - asset: assets/fonts/Amiri-Regular.ttf
+        - asset: assets/fonts/Amiri-Bold.ttf
+          weight: 700
+    - family: AmiriQuran
+      fonts:
+        - asset: assets/fonts/AmiriQuran.ttf

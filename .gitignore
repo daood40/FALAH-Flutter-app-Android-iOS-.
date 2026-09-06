@@ -77,3 +77,15 @@ worker.beat
 
 # قياساتُ P1.1 المؤقّتة — الملفّاتُ المحفوظة هي JSON وسجلّا البوّابة
 baseline/t_*
+
+# ─────────── Flutter ───────────
+falah_app/.dart_tool/
+falah_app/build/
+falah_app/.flutter-plugins*
+falah_app/*.iml
+falah_app/android/.gradle/
+falah_app/android/local.properties
+falah_app/android/app/*.jks
+falah_app/android/key.properties
+falah_app/ios/Pods/
+falah_app/ios/.symlinks/
