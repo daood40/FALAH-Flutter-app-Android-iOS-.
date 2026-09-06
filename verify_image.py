@@ -115,6 +115,21 @@ def boots():
         check("ويُعلن جاهزيّته", '"ready": true' in ready, ready[:300])
         check("وقاعدةُ المحتوى مرئيّةٌ له", '"content_db": true' in ready,
               ready[:300])
+
+        # الوثيقتان القانونيّتان **تُخدَمان من الصورة**. وقد ردّت الصورةُ
+        # ٤٠٤ عليهما أوّلَ مرّةٍ لأنّ `.dockerignore` يستبعد `docs/` —
+        # والمتجران يرفضان تطبيقًا رابطُ خصوصيّته ميّت. فيُسأل عنهما هنا:
+        # صورةٌ لا تخدمهما لا تُختم.
+        for path, name in (("/privacy", "سياسة الخصوصيّة"),
+                           ("/terms", "شروط الاستخدام")):
+            try:
+                with urllib.request.urlopen(
+                        f"http://127.0.0.1:8081{path}", timeout=5) as r:
+                    body = r.read().decode()
+                ok = r.status == 200 and len(body) > 1000
+            except (urllib.error.URLError, OSError) as e:
+                ok, body = False, str(e)
+            check(f"و{name} تُخدَم على {path}", ok, str(body)[:160])
     finally:
         p.terminate()
         try:

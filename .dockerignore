@@ -46,10 +46,15 @@ mobile/
 **/*.pyc
 .ruff_cache/
 .mypy_cache/
+# `docs/` مستبعَدٌ إلا الوثيقتين اللتين يخدمهما الخادمُ على /privacy و/terms
 docs/
+!docs/PRIVACY_POLICY.md
+!docs/TERMS_OF_SERVICE.md
 launch/
 *.md
 !README.md
+!docs/PRIVACY_POLICY.md
+!docs/TERMS_OF_SERVICE.md
 
 # ═══ مخرجاتٌ ولقطات ═══
 *.png

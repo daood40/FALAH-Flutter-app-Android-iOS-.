@@ -468,6 +468,9 @@ check("بناءُ الصورة يتحقّق من نفسه قبل أن تُختم
 check("والتحقّقُ يشمل سلامةَ قاعدة المحتوى وامتلاءها",
       "integrity_check" in _vi and "MIN_AYAT = 6236" in _vi
       and "MIN_SURAHS = 114" in _vi)
+check("وأنّ الوثيقتين القانونيّتين تُخدَمان من الصورة",
+      "/privacy" in _vi and "/terms" in _vi
+      and "docs/PRIVACY_POLICY.md" in _dock)
 check("وأنّ الخادم يقلع عليها ويُعلن جاهزيّته",
       "/readyz" in _vi and '"ready": true' in _vi and '"content_db": true' in _vi)
 # لا يُفحص فهرسُ البحث ضمنًا: جداولُ ممتلئةٌ وفهرسٌ فارغٌ = بحثٌ لا يجد شيئًا
