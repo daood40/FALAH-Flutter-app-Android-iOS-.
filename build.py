@@ -148,10 +148,35 @@ for ext in ("-wal","-shm"):
 db: sqlite3.Connection = sqlite3.connect(DB); db.executescript(SCHEMA)
 one = lambda s: db.execute(s).fetchone()[0]   # بعد `db` لا قبله
 
+# ═══════════ بوّابةُ الترخيص ═══════════
+#
+# إرشاداتُ آبل ٥٫٢ وسياساتُ Play تُلزمان بامتلاك حقوق كلِّ مادّةٍ تُعرض،
+# والمراجعُ يسأل عنها صراحةً في التطبيقات الدينيّة. وكانت كلُّ المصادر
+# التسعة تُبنى `enabled=1` وحالُ ترخيصها جميعًا «يحتاج مراجعة» أو «يحتاج
+# إذنًا» — أي أنّ الحزمةَ تُشحن بمادّةٍ لم يُحسم حقُّ عرضها.
+#
+# فقُلبت القاعدة: **المُطفأُ هو الأصل**. ومَن يُذكر هنا يُذكر بإذنٍ
+# مسمًّى، لا بحسن ظنٍّ. فإدخالُ مصدرٍ جديدٍ لا يُشحن عاملًا سهوًا، وتفعيلُ
+# مصدرٍ قرارٌ يظهر في الفرق ويُسأل عنه.
+#
+# وحين يصل إذنٌ (`launch/letters/`): يُضاف السطرُ هنا بنصِّ الإذن ومرجعِه.
+LICENCE_CLEARED = {
+    # Tanzil عبر Al Quran Cloud — المشاع الإبداعي CC BY 3.0، والتجاريُّ
+    # مسموح. شروطُه مستوفاةٌ عندنا: نسخٌ حرفيٌّ (قفلُ المصدر يمنع تغييرَ
+    # حرف)، والنسبةُ والرابطُ ظاهران في شاشة المصادر. (launch/LICENSES.md §١)
+    "mushaf.uthmani":    "CC BY 3.0 — Tanzil Project",
+    # مقارنةُ تحقّقٍ فقط: لا يُعرض منه حرفٌ على بطاقة، وأثرُه محسوبٌ وقتَ
+    # البناء في `ayat.verify_status`. (launch/LICENSES.md §٢)
+    "quran.com.uthmani": "مقارنةُ تحقّقٍ لا عرض",
+}
+
 def src(code, name, kind, origin, edition, lic, riwayah=None):
-    return db.execute("INSERT INTO sources(code,name,kind,origin,edition,riwayah,license_status)"
-                      " VALUES(?,?,?,?,?,?,?)",
-                      (code,name,kind,origin,edition,riwayah,lic)).lastrowid
+    enabled = 1 if code in LICENCE_CLEARED else 0
+    if not enabled:
+        log(f"  ⚠ مُطفأ (لا إذن): {code} — {lic}")
+    return db.execute("INSERT INTO sources(code,name,kind,origin,edition,riwayah,"
+                      "license_status,enabled) VALUES(?,?,?,?,?,?,?,?)",
+                      (code,name,kind,origin,edition,riwayah,lic,enabled)).lastrowid
 
 # ═══════════ القرآن ═══════════
 s_q  = src("mushaf.uthmani","القرآن الكريم برسم العثماني","quran","Al Quran Cloud / Tanzil",

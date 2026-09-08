@@ -372,6 +372,32 @@ def _disabled_source_silent():
     return ok, (f"وصلاتٌ بلا شرط={unguarded} · "
                 f"«مُدرج» ثابتةٌ بلا فحص={len(hardcoded)}")
 
+@invariant("LICENCE_CLEARED_IS_EXPLICIT",
+           "لا يُبنى مصدرٌ مفعَّلًا إلا بإذنٍ مسمًّى — والقائمةُ مثبَّتةٌ بالاسم")
+def _licence_cleared_explicit():
+    """المُطفأُ هو الأصلُ في `build.py`، والمفعَّلُ استثناءٌ يُذكر بإذنه.
+
+    والقائمةُ مثبَّتةٌ هنا **بالاسم لا بالعدد**، كما `OWNER_SCOPE_ENFORCED`:
+    فإضافةُ مصدرٍ إليها تُسقط هذا الثابتَ حتى يُحدَّث بوعي — وهو المقصود.
+    تفعيلُ مصدرٍ دينيٍّ قرارٌ حقوقيّ، فليظهر في الفرق ويُسأل عنه، ولا يمرّ
+    في سطرٍ بين سطور.
+    """
+    text = open(os.path.join(HERE, "build.py"), encoding="utf-8").read()
+
+    m = re.search(r"LICENCE_CLEARED\s*=\s*\{(.*?)\n\}", text, re.S)
+    if not m:
+        return False, "لا قائمةَ LICENCE_CLEARED في build.py — أحُذفت البوّابة؟"
+    cleared = set(re.findall(r'"([\w.]+)"\s*:', m.group(1)))
+
+    # ما لم يصل إذنُه بعدُ لا يُذكر هنا. (launch/LICENSES.md)
+    EXPECTED = {"mushaf.uthmani", "quran.com.uthmani"}
+    drift = sorted(cleared ^ EXPECTED)
+
+    # و`src()` تشتقّ التفعيلَ من القائمة لا من وسيطٍ يُمرَّر
+    derives = "1 if code in LICENCE_CLEARED else 0" in text
+    return not drift and derives, \
+        f"مرخَّصٌ={sorted(cleared)} · انحراف={drift} · يشتقّ من القائمة={derives}"
+
 # ═══════════════════ المشغّل ═══════════════════
 
 def main(argv):
