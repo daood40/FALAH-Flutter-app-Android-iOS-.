@@ -1,0 +1,105 @@
+name: استيراد المشروع من الحزمة
+
+# ══════════════════════════════════════════════════════════════
+#  ملفٌّ يُستعمل **مرّةً واحدة** ثم يزول من نفسه.
+#
+#  الغرض: صاحبُ المشروع على هاتفٍ بلا طرفيّة، والحزمةُ (falah.bundle)
+#  تحمل المستودعَ كاملًا بتاريخه. فيُرفع الملفّان من المتصفّح، ثم تُشغَّل
+#  هذه المهمّةُ يدويًّا فتفكّ الحزمةَ وتدفع محتواها إلى الفرع `main`.
+#
+#  وبعد نجاحها يختفي هذا الملفُّ والحزمةُ معًا — لأنّ الدفعَ يستبدل شجرةَ
+#  المستودع بشجرة الحزمة، وليس فيها هذان الملفّان.
+# ══════════════════════════════════════════════════════════════
+
+on:
+  workflow_dispatch:          # تُشغَّل بضغطة زرّ، ولا تجري وحدَها
+
+permissions:
+  contents: write             # اللازمُ للدفع، ولا شيءَ غيره
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - name: جلبُ المستودع (بحالته الحالية)
+        uses: actions/checkout@v4
+
+      - name: التأكّدُ أنّ الحزمة موجودةٌ وسليمة
+        run: |
+          set -euo pipefail
+          # تُقبل الحزمةُ باسمها الأصليّ أو بامتداد .txt — لأنّ صفحةَ التنزيل
+          # لا يسمح لها المتصفّحُ بحفظ امتدادٍ خارج قائمةٍ مسموحة، فتنزل .txt.
+          # المحتوى واحدٌ في الحالتين، والتحقّقُ أدناه يكشف أيَّ فساد.
+          BUNDLE=""
+          for f in falah.bundle falah-bundle.txt falah.bundle.txt; do
+            if [ -f "$f" ]; then BUNDLE="$f"; break; fi
+          done
+          if [ -z "$BUNDLE" ]; then
+            echo "::error::لم أجد الحزمة. ارفع falah.bundle أو falah-bundle.txt في جذر المستودع."
+            echo "Add file ← Upload files"
+            exit 1
+          fi
+          echo "الحزمة: $BUNDLE"
+          ls -lh "$BUNDLE"
+          echo "BUNDLE=$BUNDLE" >> "$GITHUB_ENV"
+          # حزمةٌ معطوبةٌ أو ناقصةُ التنزيل تُكتشف هنا، لا بعد الدفع
+          git bundle verify "$BUNDLE"
+
+      - name: فحصُ المستودع — هل هو فارغٌ فعلًا؟
+        run: |
+          set -euo pipefail
+          # الدفعُ أدناه **يستبدل** تاريخَ الفرع. فإن كان في المستودع عملٌ
+          # حقيقيٌّ سابقٌ توقّفنا: محوُ عملِ أحدٍ بلا قصدٍ لا يُستدرك.
+          n=$(git rev-list --count HEAD)
+          echo "عددُ الالتزامات الحاليّ: $n"
+          tracked=$(git ls-files | grep -v -E '^(falah\.bundle|falah-bundle\.txt|falah\.bundle\.txt|\.github/workflows/import\.yml)$' | wc -l)
+          echo "ملفّاتٌ غيرُ ملفّي الاستيراد: $tracked"
+          if [ "$tracked" -gt 0 ]; then
+            echo "::error::المستودعُ ليس فارغًا — فيه $tracked ملفًّا غيرَ ملفّي الاستيراد."
+            echo "توقّفتُ عمدًا: هذه المهمّةُ تستبدل التاريخ، وقد تمحو عملًا."
+            git ls-files | head -20
+            exit 1
+          fi
+          echo "✓ فارغٌ إلا من ملفّي الاستيراد — يمكن المضيّ"
+
+      - name: فكُّ الحزمة والدفع
+        run: |
+          set -euo pipefail
+          # تُفكُّ في مجلّدٍ منفصلٍ عن نسخة العمل، فلا تختلط شجرتان
+          git clone "$BUNDLE" /tmp/src
+          cd /tmp/src
+
+          echo "── ما في الحزمة ──"
+          echo "الالتزامات: $(git rev-list --count HEAD)"
+          echo "الملفّات   : $(git ls-files | wc -l)"
+          echo "الفرع      : $(git branch --show-current)"
+
+          # تحقّقٌ أخير: حزمةٌ نزلت ناقصةً تُعطي عشراتٍ لا مئات
+          if [ "$(git ls-files | wc -l)" -lt 200 ]; then
+            echo "::error::الحزمةُ ناقصة — أقلُّ من ٢٠٠ ملفّ. أعِد تنزيلَها ورفعَها."
+            exit 1
+          fi
+
+          git remote add target "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          # `--force` مقصودٌ هنا وحدَه: الخطوةُ السابقةُ أثبتت أنّ المستودعَ
+          # فارغٌ إلا من ملفّي الاستيراد، وهذان يُستبدلان بمحتوى الحزمة.
+          git push --force target main:main
+
+          echo "✓ دُفع $(git rev-list --count HEAD) التزامًا و$(git ls-files | wc -l) ملفًّا"
+
+      - name: ما بعدَ هذا
+        run: |
+          echo "════════════════════════════════════════════"
+          echo "  تمّ. المستودعُ الآن يحمل المشروعَ كاملًا."
+          echo "════════════════════════════════════════════"
+          echo ""
+          echo "وهذا الملفُّ (import.yml) والحزمةُ اختفيا — استُبدلا بمحتوى"
+          echo "الحزمة، وهو المقصود."
+          echo ""
+          echo "⚠ خطوةٌ لازمة: الدفعُ من داخل Actions **لا يُشغّل** أنبوبًا"
+          echo "جديدًا (حمايةٌ من التكرار اللانهائيّ). فلتشغيل البناء:"
+          echo ""
+          echo "   Actions ← CI ← Run workflow ← Run workflow"
+          echo ""
+          echo "ثم انتظر ١٥–٢٥ دقيقة، وانزل إلى Artifacts لتنزيل:"
+          echo "   falah-android-staging-apk"
