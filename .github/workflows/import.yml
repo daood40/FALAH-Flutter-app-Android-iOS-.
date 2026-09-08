@@ -1,0 +1,78 @@
+name: استيراد المشروع من الحزمة
+
+# ══════════════════════════════════════════════════════════════
+#  يُستعمل مرّةً واحدة ثم يزول من نفسه.
+#  يفكّ الحزمة المرفوعة ويدفع كلَّ فروعها.
+# ══════════════════════════════════════════════════════════════
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - name: جلبُ المستودع بحالته الحاليّة
+        uses: actions/checkout@v4
+
+      - name: التأكّدُ أنّ الحزمة موجودةٌ وسليمة
+        run: |
+          set -euo pipefail
+          BUNDLE=""
+          for f in falah-bundle-v3.txt falah-bundle-v2.txt falah-bundle.txt falah.bundle; do
+            if [ -f "$f" ]; then BUNDLE="$f"; break; fi
+          done
+          if [ -z "$BUNDLE" ]; then
+            echo "::error::لم أجد الحزمة في جذر المستودع."
+            exit 1
+          fi
+          echo "الحزمة: $BUNDLE"
+          ls -lh "$BUNDLE"
+          echo "BUNDLE=$BUNDLE" >> "$GITHUB_ENV"
+          git bundle verify "$BUNDLE"
+
+      - name: فحصُ المستودع — هل فيه عملٌ سابق؟
+        run: |
+          set -euo pipefail
+          # الدفعُ أدناه يستبدل تاريخَ الفرع. فإن كان ثمّة عملٌ سابقٌ توقّفنا.
+          # المستثنى: ملفّاتُ الاستيراد التي رفعها المالكُ بنفسه لا غير.
+          tracked=$(git ls-files | grep -v -E '^(falah-bundle-v3\.txt|falah-bundle-v2\.txt|falah-bundle\.txt|falah\.bundle|flutter-skills-merge\.zip|\.github/workflows/import\.yml)$' | wc -l)
+          echo "ملفّاتٌ غيرُ ملفّات الاستيراد: $tracked"
+          if [ "$tracked" -gt 0 ]; then
+            echo "::error::المستودعُ ليس فارغًا — فيه $tracked ملفًّا. توقّفتُ عمدًا."
+            git ls-files | head -20
+            exit 1
+          fi
+          echo "✓ يمكن المضيّ"
+
+      - name: فكُّ الحزمة والدفع
+        run: |
+          set -euo pipefail
+          # نسخةٌ مرآةٌ لتصلَ كلُّ الفروع لا الفرعُ الحاليُّ وحدَه
+          git clone --mirror "$BUNDLE" /tmp/src.git
+
+          echo "── ما في الحزمة ──"
+          git -C /tmp/src.git for-each-ref --format='%(refname:short)  %(objectname:short)' refs/heads
+          n_commits=$(git -C /tmp/src.git rev-list --count main)
+          n_files=$(git -C /tmp/src.git ls-tree -r --name-only main | wc -l)
+          echo "الالتزامات على main: $n_commits"
+          echo "الملفّات على main  : $n_files"
+
+          # حزمةٌ نزلت ناقصةً تُعطي عشراتٍ لا مئات
+          if [ "$n_files" -lt 200 ]; then
+            echo "::error::الحزمةُ ناقصة — أقلُّ من ٢٠٠ ملفّ. أعِد رفعَها."
+            exit 1
+          fi
+
+          git -C /tmp/src.git remote add target "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          # `--force` مقصودٌ هنا وحدَه: الخطوةُ السابقةُ أثبتت أنّ المستودعَ خالٍ من العمل.
+          git -C /tmp/src.git push --force target --all
+
+          echo "✓ دُفع $n_commits التزامًا و$n_files ملفًّا"
+
+      - name: ما بعدَ هذا
+        run: |
+          echo "تمّ. شغّل CI يدويًّا: Actions ← CI ← Run workflow"
