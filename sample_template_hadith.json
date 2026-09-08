@@ -1,0 +1,60 @@
+{
+ "ref": "hadith:abudawud:1000",
+ "kind": "hadith",
+ "locator": {
+  "book": "abudawud",
+  "no": 1000
+ },
+ "title": "سنن أبي داود — رقم ١٠٠٠ — صحيح",
+ "text": "أَمَا يَكْفِي أَحَدَكُمْ - أَوْ أَحَدَهُمْ - أَنْ يَضَعَ يَدَهُ عَلَى فَخِذِهِ ثُمَّ يُسَلِّمُ عَلَى أَخِيهِ مَنْ عَنْ يَمِينِهِ وَمَنْ عَنْ شِمَالِهِ",
+ "cells": {
+  "c1": [
+   "سنن أبي داود",
+   "Sunan Abi Dawud"
+  ],
+  "c2": [
+   "كتاب الصلاة",
+   "Prayer (Kitab Al-Salat)"
+  ],
+  "c3": [
+   "رقم ١٠٠٠",
+   "No. 1000"
+  ],
+  "c4": [
+   "صحيح",
+   "Sahih"
+  ]
+ },
+ "sanad": "صحيح — Al-Albani",
+ "tafsir": null,
+ "translation": {
+  "text": "Is it not sufficient for one of you or for one of them that he puts his hand on his thigh, and then gives the salutation to his brother to his right and left sides.",
+  "source": "الترجمة الإنجليزية — Sunnah.com"
+ },
+ "attribution": null,
+ "appendages": {
+  "grade": {
+   "value": "صحيح",
+   "basis": "حكم Al-Albani",
+   "by": "Al-Albani",
+   "raw": "Sahih",
+   "all": [
+    {
+     "by": "Al-Albani",
+     "grade": "Sahih"
+    },
+    {
+     "by": "Muhammad Muhyi Al-Din Abdul Hamid",
+     "grade": "Sahih"
+    },
+    {
+     "by": "Shuaib Al Arnaut",
+     "grade": "Sahih"
+    },
+    {
+     "by": "Zubair Ali Zai",
+     "grade": "Sahih"
+    }
+   ]
+  },
+  "isnad_full": "حَدَّثَنَا مُحَمَّدُ بْنُ سُلَيْمَانَ الأَنْبَارِيُّ، حَدَّثَنَا أَبُو نُعَيْمٍ، عَنْ مِسْعَرٍ، بِإِسْنَادِهِ وَمَعْنَاهُ قَالَ \n\" أَمَا يَكْفِي أَحَدَكُمْ - أَوْ أَحَدَهُمْ - أَنْ يَضَعَ يَدَهُ عَلَى فَخِذِهِ ثُمَّ يُسَلِّمُ ع

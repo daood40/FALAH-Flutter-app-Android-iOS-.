@@ -1,0 +1,108 @@
+# نشر فلاح: التطبيق خلف خادمٍ أماميّ يتولّى الشهادة والضغط.
+# الاستعمال:  FALAH_DOMAIN=falah.example.com docker compose up -d
+services:
+  app:
+    build: ..
+    restart: unless-stopped
+    environment:
+      FALAH_APP_DB: /data/app.db
+      FALAH_SECURE: "1"                       # كعكةٌ لا تسافر إلا عبر HTTPS
+      FALAH_ORIGIN: "https://${FALAH_DOMAIN}" # يُرفض كل طلب تغييرٍ من غير هذا النطاق
+      FALAH_INVITE: "${FALAH_INVITE:-}"       # إطلاقٌ مغلق: لا حساب إلا برمزٍ تعطيه
+      FALAH_INLINE_WORKER: "0"                # التصيير في خدمةٍ مستقلّة، لا هنا
+      FALAH_TRUST_PROXY: "1"                  # Caddy أمامه ويكتب X-Forwarded-For
+      PORT: "8080"
+    # حدود الطابور والموارد تُقرأ هنا وفي العامل من الملفّ نفسه، وإلا اختلف
+    # ما يفرضه الخادمُ عند الاستقبال عمّا يفرضه العاملُ عند التنفيذ.
+    env_file: [.env]
+    volumes:
+      - falah-data:/data                      # app.db — يبقى بعد التحديث
+      - falah-exports:/app/exports            # ثمرة التصيير — يكتبها العامل ويقرؤها الخادم
+    expose: ["8080"]
+    healthcheck:                              # حياةٌ لا جاهزية — انظر Dockerfile
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  # عامل التصيير: بطاقةٌ ≈ ٣ث ومقطعٌ ≈ ٢٦ث. فُصل عن الخادم كي لا يزاحم
+  # استقبالَ الطلبات، ولأنه وحده يحتاج كروميوم وffmpeg وذاكرةً أوسع. يُزاد
+  # عددُه (`--scale worker=3`) حين يطول انتظارُ الطابور — والخادم لا يُمسّ.
+  worker:
+    build: ..
+    restart: unless-stopped
+    depends_on: [app]
+    command: ["python3", "worker.py"]
+    environment:
+      FALAH_APP_DB: /data/app.db              # الطابور نفسه — قاعدةٌ واحدة مشتركة
+      FALAH_WORKERS: "${FALAH_WORKERS:-1}"
+    env_file: [.env]                          # الحدود نفسها التي يفرضها الخادم
+    volumes:
+      - falah-data:/data
+      - falah-exports:/app/exports
+    # العامل بلا فحصٍ يبقى «يعمل» وهو معلَّق، والطابور يتراكم صامتًا.
+    # النبضة تُكتب داخل حلقته، فتوقّفُها يعني توقّفَ العمل لا العملية.
+    healthcheck:
+      test: ["CMD", "python3", "worker.py", "--healthcheck"]
+      interval: 30s
+      timeout: 10s
+      start_period: 20s
+      retries: 3
+
+  # ── النسخُ الاحتياطيُّ خدمةٌ لا تذكيرٌ في وثيقة ──
+  # كان `backup.sh` يُترك للمالك يضعه في cron، وهذا يعني عمليًّا أنه لا
+  # يجري: من نسي سطرًا في cron لا يكتشف نسيانَه إلا يومَ يحتاج النسخة.
+  # فصار خدمةً تُقلع مع الباقي وتنسخ كلَّ يومٍ في الثالثة فجرًا.
+  #
+  # وتقرأ القاعدةَ من الحجم نفسِه للقراءة فقط: نسخُ SQLite الآمنُ يعمل
+  # والخدمةُ شغّالة (WAL)، فلا توقُّفَ ولا تعارض.
+  backup:
+    build: ..
+    restart: unless-stopped
+    depends_on: [app]
+    environment:
+      FALAH_APP_DB: /data/app.db
+      # عددُ النسخ المحفوظة. أربعةَ عشرَ يومًا: يكفي لاكتشاف عطبٍ صامتٍ
+      # يظهر بعد أسبوع، ولا يملأ القرص.
+      KEEP: "${FALAH_BACKUP_KEEP:-14}"
+    volumes:
+      - falah-data:/data
+      - falah-backups:/backups
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while true; do
+          # الانتظارُ حتى الثالثة فجرًا بتوقيت الخادم، لا كلَّ ٢٤ ساعةً من
+          # لحظة الإقلاع: الأخيرةُ تنزلق فتصير النسخةُ وقتَ الذروة.
+          now=$$(date +%s); next=$$(date -d 'tomorrow 03:00' +%s 2>/dev/null || echo $$((now+86400)))
+          sleep $$((next - now))
+          sh deploy/backup.sh /backups "$$KEEP" || echo "✗ فشل النسخ الاحتياطيّ" >&2
+        done
+    healthcheck:
+      # نسخةٌ واحدةٌ على الأقلّ خلال ٤٨ ساعة، وإلّا فالخدمةُ «تعمل» ولا تنسخ
+      test: ["CMD", "sh", "-c",
+             "find /backups -name 'app-*.db.gz' -mmin -2880 | grep -q . || [ ! -f /backups/.started ]"]
+      interval: 6h
+      timeout: 10s
+      start_period: 26h
+      retries: 2
+
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on: [app]
+    ports: ["80:80", "443:443"]
+    environment:
+      FALAH_DOMAIN: ${FALAH_DOMAIN:?حدّد النطاق}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  falah-data:
+  falah-exports:
+  falah-backups:
+  caddy-data:
+  caddy-config:

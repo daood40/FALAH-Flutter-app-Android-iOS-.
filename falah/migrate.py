@@ -1,0 +1,385 @@
+"""هجرات مرقَّمة لـ`app.db` — تُطبَّق مرّةً، وتُسجَّل، ولا تحذف بلا إذن.
+
+    python3 -m falah.migrate            # يطبّق ما لم يُطبَّق
+    python3 -m falah.migrate --plan     # يقول ماذا سيفعل ولا يفعل
+    python3 -m falah.migrate --status   # ما طُبِّق وما بقي
+
+القاعدة الحاكمة: **لا هجرةَ هادمةٌ تجري بصمت.** كل هجرةٍ تُصنَّف. الآمنة
+(عمودٌ جديد، فهرسٌ جديد، جدولٌ جديد) تجري وحدها. والهادمة — حذفُ عمودٍ أو
+جدول، أو إعادةُ بناءٍ تنقل البيانات — لا تجري إلا بـ`FALAH_ALLOW_DESTRUCTIVE=1`
+مع نسخةٍ احتياطية، وتطبع قبلها ما ستفعله بالضبط.
+
+ولماذا `IF NOT EXISTS` في `store.SCHEMA` لا يكفي؟ لأنه يُنشئ الجدول
+المفقود ولا يمسّ الموجود. قاعدةٌ أُنشئت قبل عمودٍ جديد تبقى بلا العمود،
+فتنكسر عند أول قراءة. الهجرات هي ما يسدّ هذا الفرق.
+"""
+import os, sys, time
+
+from . import store
+
+class MigrationError(Exception): pass
+
+LEDGER = """
+CREATE TABLE IF NOT EXISTS schema_migrations(
+  version    INTEGER PRIMARY KEY,
+  name       TEXT NOT NULL,
+  applied_at INTEGER NOT NULL,
+  ms         INTEGER
+);
+"""
+
+def _cols(c, table):
+    return {r[1] for r in c.execute(f"PRAGMA table_info({table})")}
+
+def _has_table(c, table):
+    return bool(c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                          (table,)).fetchone())
+
+def _has_index(c, name):
+    return bool(c.execute("SELECT 1 FROM sqlite_master WHERE type='index' AND name=?",
+                          (name,)).fetchone())
+
+# ═══════════ الهجرات ═══════════
+# كلٌّ منها: (رقم، اسم، هادمة؟، دالّة). الدالّة تتحمّل أن تُنادى على قاعدةٍ
+# طُبِّق فيها ما تفعله أصلًا (idempotent) — فإعادةُ التشغيل لا تكسر شيئًا.
+
+def m001_jobs_queue(c):
+    """جدول الطابور — يُنشئه SCHEMA أيضًا؛ هنا للقواعد الأقدم منه."""
+    if not _has_table(c, "jobs"):
+        c.executescript(store.SCHEMA)
+
+def m002_jobs_idempotency(c):
+    """مفتاح التفرّد ووقتُ الاستحقاق والفهارس — إضافةٌ محضة."""
+    have = _cols(c, "jobs")
+    if "idem_key" not in have:
+        c.execute("ALTER TABLE jobs ADD COLUMN idem_key TEXT")
+    if "not_before" not in have:
+        c.execute("ALTER TABLE jobs ADD COLUMN not_before INTEGER NOT NULL DEFAULT 0")
+    c.execute("""CREATE UNIQUE INDEX IF NOT EXISTS ix_jobs_idem ON jobs(idem_key)
+                 WHERE idem_key IS NOT NULL AND state IN ('queued','running')""")
+    # الفهرس القديم كان على (state, created_at)؛ الجديد يضمّ not_before
+    c.execute("CREATE INDEX IF NOT EXISTS ix_jobs_queue2 ON jobs(state, not_before, created_at)")
+
+def m003_jobs_state_guard(c):
+    """قيودُ الحالة والتقدّم — لا يقبلها SQLite إلا ببناء الجدول من جديد.
+
+    **هادمة بالتصنيف** لأنها تنسخ الجدول وتُسقط الأصل. ما يضيع في أسوأ
+    الأحوال: مهامٌّ في الطابور لم تبدأ (تُعاد بضغطة). ولا يمسّ هذا مشروعًا
+    ولا نصًّا ولا حسابًا. ومع ذلك لا تجري بلا إذنٍ صريح — القاعدة أهمّ من
+    الاستثناء.
+    """
+    sql = c.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='jobs'"
+                    ).fetchone()
+    if sql and "CHECK (state IN" in (sql[0] or ""): return          # مطبَّقةٌ سلفًا
+    c.execute("PRAGMA foreign_keys=OFF")
+    c.executescript("""
+      CREATE TABLE jobs_new(
+        id INTEGER PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL, payload TEXT NOT NULL,
+        state TEXT NOT NULL DEFAULT 'queued',
+        attempts INTEGER NOT NULL DEFAULT 0,
+        max_attempts INTEGER NOT NULL DEFAULT 2,
+        progress INTEGER NOT NULL DEFAULT 0,
+        step TEXT, error TEXT, result TEXT, worker TEXT, reserved TEXT,
+        idem_key TEXT, not_before INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL, started_at INTEGER,
+        finished_at INTEGER, heartbeat INTEGER,
+        CHECK (state IN ('queued','running','done','failed','canceled')),
+        CHECK (attempts >= 0 AND attempts <= max_attempts + 1),
+        CHECK (progress BETWEEN 0 AND 100)
+      );
+      INSERT INTO jobs_new SELECT id,user_id,kind,payload,state,attempts,max_attempts,
+        progress,step,error,result,worker,reserved,idem_key,not_before,
+        created_at,started_at,finished_at,heartbeat FROM jobs;
+      DROP TABLE jobs;
+      ALTER TABLE jobs_new RENAME TO jobs;
+      CREATE INDEX IF NOT EXISTS ix_jobs_queue ON jobs(state, not_before, created_at);
+      CREATE INDEX IF NOT EXISTS ix_jobs_user  ON jobs(user_id, created_at DESC);
+      CREATE UNIQUE INDEX IF NOT EXISTS ix_jobs_idem ON jobs(idem_key)
+        WHERE idem_key IS NOT NULL AND state IN ('queued','running');
+    """)
+    c.execute("PRAGMA foreign_keys=ON")
+
+def m004_jobs_index_names(c):
+    """يوحّد فهرس الطابور — اسمًا وتعريفًا — على المسارين.
+
+    كشفَه تشغيلُ البوّابة على قاعدةٍ **جديدة** لا مهاجَرة، فظهر انحرافان:
+
+      • القاعدة الجديدة تنتهي بـ`ix_jobs_queue2` ولا `ix_jobs_queue` فيها،
+        لأن `SCHEMA` صارت تحمل القيود فتُرجع الهجرةَ ٠٠٣ باكرًا.
+      • القاعدة المهاجَرة تحمل الاثنين، والقديمُ منهما
+        `(state, created_at)` — **بلا `not_before`**، وهو العمود الذي
+        يستعلم به السحبُ فعلًا. أي فهرسٌ قائمٌ لا يخدم الاستعلام القائم.
+
+    والانحرافُ بين مسارَي الإنشاء أخطر من الفهرس نفسه: قاعدتان تُظنّان
+    سواءً وليستا كذلك، فيُختبر أحدُهما ويُنشر الآخر.
+
+    آمنةٌ بالتصنيف: الفهارس تُبنى من البيانات ولا تحملها — حذفُها وإعادةُ
+    بنائها لا تمسّ صفًّا واحدًا.
+    """
+    if not _has_table(c, "jobs"): return
+    c.execute("DROP INDEX IF EXISTS ix_jobs_queue2")
+    c.execute("DROP INDEX IF EXISTS ix_jobs_queue")
+    c.execute("CREATE INDEX ix_jobs_queue ON jobs(state, not_before, created_at)")
+
+def m005_roles_and_audit(c):
+    """الأدوار وسجلُّ التدقيق — **إضافةٌ محضة**.
+
+    آمنةٌ بالتصنيف بلا تحفّظ: عمودان جديدان بافتراضيّ، وجدولٌ جديد،
+    وفهارس، ومُشغِّلان. لا `DROP` ولا نقلَ بياناتٍ ولا إعادةَ بناءِ جدول،
+    فلا صفَّ يُمَسّ.
+
+    **والافتراضيُّ `'user'` — أقلُّ صلاحيةٍ ممكنة.** لا حسابَ قائمٌ يصير
+    إداريًّا بسبب هذه الهجرة، ولا واحد. وأوّلُ `super_admin` يُصنع بأمرٍ
+    محلّيّ مسجَّل (`python3 -m falah.roles`) لا عبر الشبكة ولا بمفتاح.
+
+    والمُشغِّلان يجعلان `audit_logs` مُلحَقًا فقط في **القاعدة نفسها**، لا
+    في التطبيق وحده: `UPDATE` و`DELETE` عليه يُجهضان. وحدُّ ذلك مكتوبٌ في
+    `docs/P1.2_AUTH_RBAC_DESIGN.md §٨٫٥`.
+    """
+    have = _cols(c, "users")
+    if "role" not in have:
+        c.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'")
+    if "role_changed_at" not in have:
+        c.execute("ALTER TABLE users ADD COLUMN role_changed_at INTEGER")
+    c.execute("CREATE INDEX IF NOT EXISTS ix_users_role ON users(role)")
+    c.executescript("""
+      CREATE TABLE IF NOT EXISTS audit_logs(
+        id            INTEGER PRIMARY KEY,
+        at            INTEGER NOT NULL,
+        request_id    TEXT,
+        actor_id      INTEGER,
+        actor_role    TEXT,
+        action        TEXT NOT NULL,
+        resource_type TEXT,
+        resource_id   TEXT,
+        result        TEXT NOT NULL,
+        ip            TEXT,
+        user_agent    TEXT,
+        metadata      TEXT
+      );
+      CREATE INDEX IF NOT EXISTS ix_audit_at     ON audit_logs(at DESC);
+      CREATE INDEX IF NOT EXISTS ix_audit_actor  ON audit_logs(actor_id, at DESC);
+      CREATE INDEX IF NOT EXISTS ix_audit_action ON audit_logs(action, at DESC);
+      CREATE TRIGGER IF NOT EXISTS audit_logs_no_update BEFORE UPDATE ON audit_logs
+      BEGIN SELECT RAISE(ABORT, 'audit_logs is append-only'); END;
+      CREATE TRIGGER IF NOT EXISTS audit_logs_no_delete BEFORE DELETE ON audit_logs
+      BEGIN SELECT RAISE(ABORT, 'audit_logs is append-only'); END;
+    """)
+
+
+def m006_schedules(c):
+    """الجدولة — **إضافةٌ محضة**: جدولان جديدان وفهارس، بلا مساسِ صفّ.
+
+    والقرارُ الحاسمُ في التصميم: **الجدولةُ في الخادم لا في العميل.**
+    مؤقّتٌ داخل التطبيق يموت بإغلاقه، ولا يعمل والهاتفُ نائم، ويختلف
+    توقيتُه بين جهازٍ وجهاز. فالحالةُ هنا، والعاملُ ينفّذ.
+
+    وحقلُ `tz` نصٌّ لا إزاحةٌ رقميّة: الإزاحةُ تتغيّر بالتوقيت الصيفيّ،
+    فمن جدول «كلَّ يومٍ ٦ صباحًا» بإزاحةٍ محفوظةٍ استيقظ على ٥ أو ٧ بعد
+    التحويل. واسمُ المنطقة يبقى صحيحًا عبر التحويلات.
+
+    و`next_run_at` محسوبٌ ومخزَّن: البحثُ عن «ما استحقّ» يصير فهرسًا لا
+    مسحًا لكلِّ جدولٍ في القاعدة.
+
+    و`idem_key` يمنع التنفيذَ المزدوج: تشغيلان متزامنان للكانس لا
+    يُنشئان مهمّتين — القيدُ الفريدُ يمنع الثانية.
+    """
+    c.executescript("""
+      CREATE TABLE IF NOT EXISTS schedules(
+        id           INTEGER PRIMARY KEY,
+        user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        project_id   INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        kind         TEXT    NOT NULL DEFAULT 'export',
+        title        TEXT    NOT NULL DEFAULT '',
+        -- 'once' مرّةً واحدة · 'daily' · 'weekly' · 'monthly'
+        recurrence   TEXT    NOT NULL DEFAULT 'once',
+        -- اسمُ منطقةٍ زمنيّة (Africa/Tripoli) لا إزاحة — انظر شرحَ الدالّة
+        tz           TEXT    NOT NULL DEFAULT 'UTC',
+        -- دقائقُ من منتصف ليل المنطقة، ٠–١٤٣٩
+        at_minute    INTEGER NOT NULL DEFAULT 0,
+        -- ٠=الاثنين … ٦=الأحد (weekly) · ١–٢٨ (monthly)
+        day_of       INTEGER,
+        status       TEXT    NOT NULL DEFAULT 'active',
+        next_run_at  INTEGER,
+        last_run_at  INTEGER,
+        runs         INTEGER NOT NULL DEFAULT 0,
+        failures     INTEGER NOT NULL DEFAULT 0,
+        created_at   INTEGER NOT NULL,
+        updated_at   INTEGER NOT NULL,
+        CHECK (recurrence IN ('once','daily','weekly','monthly')),
+        CHECK (status     IN ('active','paused','done','failed')),
+        CHECK (at_minute >= 0 AND at_minute < 1440),
+        CHECK (kind       IN ('export','video'))
+      );
+      CREATE INDEX IF NOT EXISTS ix_sched_due
+        ON schedules(status, next_run_at);
+      CREATE INDEX IF NOT EXISTS ix_sched_user
+        ON schedules(user_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS ix_sched_project ON schedules(project_id);
+
+      -- سجلُّ التنفيذ: لماذا لا يكفي عمودٌ في `schedules`؟ لأن السؤالَ
+      -- «متى فشل ولماذا» يحتاج تاريخًا لا آخرَ قيمة.
+      CREATE TABLE IF NOT EXISTS schedule_runs(
+        id          INTEGER PRIMARY KEY,
+        schedule_id INTEGER NOT NULL REFERENCES schedules(id) ON DELETE CASCADE,
+        at          INTEGER NOT NULL,
+        job_id      INTEGER,
+        result      TEXT    NOT NULL,
+        error       TEXT,
+        idem_key    TEXT    NOT NULL,
+        CHECK (result IN ('queued','skipped','failed'))
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS ux_srun_idem
+        ON schedule_runs(idem_key);
+      CREATE INDEX IF NOT EXISTS ix_srun_sched
+        ON schedule_runs(schedule_id, at DESC);
+    """)
+
+
+
+def m007_publishing(c):
+    """النشر — **إضافةٌ محضة**: جدولان وفهارس.
+
+    و`secret_sealed` مُغلَّفٌ لا عارٍ: رمزُ البوت سرُّ المستخدم، ومن ملكه
+    نشر باسمه. ولا يُخزَّن عاريًا في قاعدةٍ قد تُنسخ احتياطيًّا أو تُقرأ
+    بخطأ. و`hint` آخرُ أربعةِ محارفَ وحدها — يعرف بها المستخدمُ أيَّ حسابٍ
+    ربط، ولا تكفي أحدًا لينتحله.
+    """
+    c.executescript("""
+      CREATE TABLE IF NOT EXISTS publish_accounts(
+        id            INTEGER PRIMARY KEY,
+        user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        provider      TEXT    NOT NULL,
+        label         TEXT    NOT NULL DEFAULT '',
+        secret_sealed TEXT    NOT NULL,
+        hint          TEXT    NOT NULL DEFAULT '',
+        status        TEXT    NOT NULL DEFAULT 'active',
+        created_at    INTEGER NOT NULL,
+        updated_at    INTEGER NOT NULL,
+        CHECK (status IN ('active','suspended'))
+      );
+      CREATE INDEX IF NOT EXISTS ix_pubacc_user
+        ON publish_accounts(user_id, created_at DESC);
+
+      CREATE TABLE IF NOT EXISTS publish_attempts(
+        id          INTEGER PRIMARY KEY,
+        user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        account_id  INTEGER REFERENCES publish_accounts(id) ON DELETE SET NULL,
+        export_id   INTEGER,
+        at          INTEGER NOT NULL,
+        result      TEXT    NOT NULL,
+        error       TEXT,
+        external_id TEXT,
+        CHECK (result IN ('sent','failed','skipped'))
+      );
+      CREATE INDEX IF NOT EXISTS ix_pubatt_user
+        ON publish_attempts(user_id, at DESC);
+    """)
+
+
+MIGRATIONS = [
+    (1, "jobs_queue",        False, m001_jobs_queue),
+    (2, "jobs_idempotency",  False, m002_jobs_idempotency),
+    (3, "jobs_state_guard",  True,  m003_jobs_state_guard),
+    (4, "jobs_index_names",  False, m004_jobs_index_names),
+    (5, "roles_and_audit",   False, m005_roles_and_audit),
+    (6, "schedules",         False, m006_schedules),
+    (7, "publishing",        False, m007_publishing),
+]
+
+# ═══════════ المشغّل ═══════════
+
+def applied(c):
+    c.executescript(LEDGER); c.commit()
+    return {r[0] for r in c.execute("SELECT version FROM schema_migrations")}
+
+def pending(c):
+    done = applied(c)
+    return [m for m in MIGRATIONS if m[0] not in done]
+
+def production_guard(quiet=False):
+    """في الإنتاج: لا هجرةَ هادمةٌ بلا نسخةٍ **مُسترجَعةٍ مُتحقَّقٍ منها**.
+
+    الحارس هنا لا في `dbsafe.py` وحده، لأن `python3 -m falah.migrate` يُشغَّل
+    مباشرةً فيتخطّى أي فحصٍ خارجيّ. ملفُّ نسخةٍ موجودٌ لا يكفي: البيان يجب
+    أن يحمل `verified_at`، أي أن أحدًا فكّها وفتحها وعدّ صفوفها فعلًا.
+    """
+    if os.environ.get("FALAH_ENV", "development").strip().lower() not in ("production", "prod"):
+        return True, ""
+    import glob, json as _json
+    d = os.environ.get("FALAH_BACKUP_DIR",
+                       os.path.join(os.path.dirname(os.path.dirname(
+                           os.path.abspath(__file__))), "backups"))
+    mans = sorted(glob.glob(os.path.join(d, "*.db.gz.json")), key=os.path.getmtime,
+                  reverse=True)
+    for m in mans[:1]:
+        try:
+            if _json.load(open(m)).get("verified_at"):
+                return True, ""
+        except Exception:
+            pass
+    return False, ("إنتاجٌ + هجرةٌ هادمة + بلا نسخةٍ مُسترجَعةٍ متحقَّقٍ منها.\n"
+                   "     python3 dbsafe.py backup && python3 dbsafe.py restore-test")
+
+def run(c=None, allow_destructive=None, plan_only=False, quiet=False):
+    """يطبّق ما لم يُطبَّق. يعيد (طُبِّقت، مؤجَّلةٌ لأنها هادمة)."""
+    own = c is None
+    c = c or store.connect()
+    if allow_destructive is None:
+        allow_destructive = os.environ.get("FALAH_ALLOW_DESTRUCTIVE") == "1"
+    if allow_destructive and not plan_only:
+        # الإذن الصريح يفتح الباب، والحارس يقف عنده. الاثنان معًا لا أحدهما.
+        okg, why = production_guard()
+        if not okg:
+            allow_destructive = False
+            if not quiet: print(f"  ⛔ الحارس أوقف الهجرات الهادمة: {why}")
+    ran, held = [], []
+    try:
+        for ver, name, destructive, fn in pending(c):
+            if destructive and not allow_destructive:
+                held.append((ver, name))
+                if not quiet:
+                    print(f"  ⛔ {ver:03d} {name} — هادمةٌ بالتصنيف، موقوفة.\n"
+                          f"     {(fn.__doc__ or '').strip().splitlines()[0]}\n"
+                          f"     للتشغيل بعد نسخةٍ احتياطية: "
+                          f"FALAH_ALLOW_DESTRUCTIVE=1 python3 -m falah.migrate")
+                continue
+            if plan_only:
+                ran.append((ver, name))
+                if not quiet: print(f"  → {ver:03d} {name}"
+                                    + ("  (هادمة)" if destructive else ""))
+                continue
+            t0 = time.time()
+            fn(c)
+            c.execute("INSERT INTO schema_migrations(version,name,applied_at,ms) "
+                      "VALUES(?,?,?,?)", (ver, name, store.now(),
+                                          int((time.time() - t0) * 1000)))
+            c.commit()
+            ran.append((ver, name))
+            if not quiet: print(f"  ✓ {ver:03d} {name}  ({(time.time()-t0)*1000:.0f} م.ث)")
+        if not ran and not held and not quiet:
+            print("  ✓ لا هجرةَ معلّقة")
+        return ran, held
+    finally:
+        if own: c.close()
+
+def status(c=None):
+    own = c is None
+    c = c or store.connect()
+    try:
+        done = applied(c)
+        for ver, name, destructive, _ in MIGRATIONS:
+            mark = "✓" if ver in done else ("⛔" if destructive else "·")
+            print(f"  {mark} {ver:03d} {name}" + ("  (هادمة)" if destructive else ""))
+        return done
+    finally:
+        if own: c.close()
+
+if __name__ == "__main__":
+    store.init()
+    if "--status" in sys.argv: status()
+    else:
+        ran, held = run(plan_only="--plan" in sys.argv)
+        sys.exit(2 if held and "--strict" in sys.argv else 0)

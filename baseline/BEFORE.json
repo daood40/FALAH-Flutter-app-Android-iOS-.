@@ -1,0 +1,235 @@
+{
+ "label": "BEFORE",
+ "at": "2026-09-04T01:05:49",
+ "git": "53b3d46",
+ "routes": {
+  "/healthz": {
+   "p50": 0.69,
+   "min": 0.64,
+   "max": 0.9,
+   "n": 25,
+   "status": 200,
+   "auth": "public"
+  },
+  "/readyz": {
+   "p50": 1.7,
+   "min": 1.63,
+   "max": 2.09,
+   "n": 25,
+   "status": 200,
+   "auth": "public"
+  },
+  "/health": {
+   "p50": 54.62,
+   "min": 52.35,
+   "max": 58.21,
+   "n": 25,
+   "status": 200,
+   "auth": "public"
+  },
+  "/card?kind=quran&surah=94&ayah=5&to=6": {
+   "p50": 1.99,
+   "min": 1.85,
+   "max": 2.36,
+   "n": 25,
+   "status": 200,
+   "auth": "public"
+  },
+  "/card?kind=hadith&book=bukhari&no=1": {
+   "p50": 2.51,
+   "min": 2.31,
+   "max": 2.76,
+   "n": 25,
+   "status": 200,
+   "auth": "public"
+  },
+  "/quran/search?q=%D8%A7%D9%84%D8%B5%D8%A8%D8%B1&limit=10": {
+   "p50": 1.76,
+   "min": 1.67,
+   "max": 2.2,
+   "n": 25,
+   "status": 200,
+   "auth": "public"
+  },
+  "/hadith/search?q=%D8%A7%D9%84%D9%86%D9%8A%D8%A9&limit=10": {
+   "p50": 1.99,
+   "min": 1.92,
+   "max": 2.26,
+   "n": 25,
+   "status": 200,
+   "auth": "public"
+  },
+  "/chapters?book=bukhari": {
+   "p50": 3.53,
+   "min": 3.39,
+   "max": 5.3,
+   "n": 25,
+   "status": 200,
+   "auth": "public"
+  },
+  "/templates?kind=quran&limit=20": {
+   "p50": 2.02,
+   "min": 1.94,
+   "max": 2.41,
+   "n": 25,
+   "status": 200,
+   "auth": "public"
+  },
+  "/topics": {
+   "p50": 1.86,
+   "min": 1.69,
+   "max": 2.38,
+   "n": 25,
+   "status": 200,
+   "auth": "public"
+  },
+  "/series?topic=1&count=5": {
+   "p50": 7.41,
+   "min": 7.1,
+   "max": 7.9,
+   "n": 25,
+   "status": 200,
+   "auth": "public"
+  },
+  "/sources": {
+   "p50": 1.51,
+   "min": 1.39,
+   "max": 1.81,
+   "n": 25,
+   "status": 200,
+   "auth": "public"
+  },
+  "/app/config": {
+   "p50": 0.83,
+   "min": 0.74,
+   "max": 0.99,
+   "n": 25,
+   "status": 200,
+   "auth": "public"
+  },
+  "/app/me": {
+   "p50": 1.39,
+   "min": 1.23,
+   "max": 1.49,
+   "n": 25,
+   "status": 200,
+   "auth": "session"
+  },
+  "/app/entitlements": {
+   "p50": 1.43,
+   "min": 1.35,
+   "max": 2.01,
+   "n": 25,
+   "status": 200,
+   "auth": "session"
+  },
+  "/app/projects": {
+   "p50": 1.36,
+   "min": 1.28,
+   "max": 1.64,
+   "n": 25,
+   "status": 200,
+   "auth": "session"
+  },
+  "/app/jobs": {
+   "p50": 1.41,
+   "min": 1.31,
+   "max": 1.67,
+   "n": 25,
+   "status": 200,
+   "auth": "session"
+  },
+  "/app/exports": {
+   "p50": 1.29,
+   "min": 1.22,
+   "max": 2.65,
+   "n": 25,
+   "status": 200,
+   "auth": "session"
+  },
+  "/app/limits": {
+   "p50": 1.34,
+   "min": 1.23,
+   "max": 1.43,
+   "n": 25,
+   "status": 200,
+   "auth": "session"
+  }
+ },
+ "queries": {
+  "/health": {
+   "queries": 12,
+   "status": 200
+  },
+  "/card?kind=quran&surah=94&ayah=5&to=6": {
+   "queries": 6,
+   "status": 200
+  },
+  "/card?kind=hadith&book=bukhari&no=1": {
+   "queries": 5,
+   "status": 200
+  },
+  "/quran/search?q=%D8%A7%D9%84%D8%B5%D8%A8%D8%B1&limit=10": {
+   "queries": 1,
+   "status": 200
+  },
+  "/hadith/search?q=%D8%A7%D9%84%D9%86%D9%8A%D8%A9&limit=10": {
+   "queries": 1,
+   "status": 200
+  },
+  "/chapters?book=bukhari": {
+   "queries": 2,
+   "status": 200
+  },
+  "/templates?kind=quran&limit=20": {
+   "queries": 2,
+   "status": 200
+  },
+  "/topics": {
+   "queries": 49,
+   "status": 200
+  },
+  "/sources": {
+   "queries": 1,
+   "status": 200
+  }
+ },
+ "enqueue": {
+  "export": {
+   "p50": 4.91,
+   "min": 4.57,
+   "max": 5.94,
+   "n": 12,
+   "statuses": [
+    202
+   ]
+  },
+  "video": {
+   "p50": 4.76,
+   "min": 4.26,
+   "max": 5.98,
+   "n": 12,
+   "statuses": [
+    202
+   ]
+  }
+ },
+ "sizes": {
+  "app.py": 758,
+  "api.py": 635
+ },
+ "queries_not_counted": {
+  "/healthz": "طبقة التطبيق — لا تمرّ بـapi.conn",
+  "/readyz": "طبقة التطبيق — لا تمرّ بـapi.conn",
+  "/series?topic=1&count=5": "carousel يفتح اتصالَه بنفسه"
+ },
+ "tests": {
+  "unit": 528,
+  "audit": 124,
+  "ui": 53,
+  "failure": 95,
+  "leak": 54,
+  "isolation": 74,
+  "total": 928
+ }
+}

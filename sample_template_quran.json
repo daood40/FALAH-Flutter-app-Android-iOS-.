@@ -1,0 +1,77 @@
+{
+ "ref": "quran:100:1",
+ "kind": "quran",
+ "locator": {
+  "surah": 100,
+  "ayah": 1
+ },
+ "title": "سُورَةُ العَادِيَاتِ — الآية ١",
+ "text": "وَٱلْعَٰدِيَٰتِ ضَبْحًۭا",
+ "cells": {
+  "c1": [
+   "سُورَةُ العَادِيَاتِ",
+   "Al-Aadiyaat"
+  ],
+  "c2": [
+   "مكية",
+   "Meccan"
+  ],
+  "c3": [
+   "صفحة ٥٩٩",
+   "Page 599"
+  ],
+  "c4": [
+   "الآية ١",
+   "Verse 1"
+  ]
+ },
+ "sanad": "القرآن الكريم برسم العثماني — حفص عن عاصم",
+ "tafsir": {
+  "text": "أقسم الله تعالى بالخيل الجاريات في سبيله نحو العدوِّ، حين يظهر صوتها من سرعة عَدْوِها. ولا يجوز للمخلوق أن يقسم إلا بالله، فإن القسم بغير الله شرك.",
+  "source": "التفسير الميسر"
+ },
+ "translation": {
+  "text": "By the racers, panting,",
+  "source": "Saheeh International"
+ },
+ "attribution": null,
+ "appendages": {
+  "locus": {
+   "surah": 100,
+   "from": 1,
+   "to": 1,
+   "page": [
+    599
+   ],
+   "juz": 30
+  },
+  "context": {
+   "before": null,
+   "after": "فَٱلْمُورِيَٰتِ قَدْحًۭا"
+  },
+  "verification": {
+   "second_source": "Quran.com API v4",
+   "status": [
+    "orthographic"
+   ],
+   "basmala_stripped": true
+  }
+ },
+ "provenance": {
+  "source": "القرآن الكريم برسم العثماني",
+  "edition": "quran-uthmani",
+  "riwayah": "حفص عن عاصم",
+  "origin": "Al Quran Cloud / Tanzil",
+  "license": "يحتاج مراجعة ترخيص"
+ },
+ "verification": {
+  "checks": "25/25",
+  "stages": [
+   "أصل المصدر",
+   "سلامة النص",
+   "الموضع والإسناد",
+   "سلامة المعنى",
+   "الإخراج والحقوق"
+  ]
+ },
+ "caption": "سُورَةُ العَادِيَاتِ — الآية ١\nالقرآن الكريم برسم العثم

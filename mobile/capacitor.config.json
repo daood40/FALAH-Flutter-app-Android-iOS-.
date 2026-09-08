@@ -1,0 +1,30 @@
+{
+  "appId": "com.falah.app",
+  "appName": "فَلاح",
+  "webDir": "www",
+  "backgroundColor": "#070D0B",
+  "server": {
+    "androidScheme": "https",
+    "iosScheme": "https",
+    "hostname": "app.falah.example",
+    "cleartext": false
+  },
+  "android": {
+    "allowMixedContent": false,
+    "webContentsDebuggingEnabled": false
+  },
+  "ios": {
+    "contentInset": "always",
+    "limitsNavigationsToAppBoundDomains": true
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchAutoHide": false,
+      "backgroundColor": "#070D0B",
+      "androidSplashResourceName": "splash"
+    },
+    "StatusBar": { "style": "DARK", "backgroundColor": "#0C1613" },
+    "Filesystem": {},
+    "Share": {}
+  }
+}

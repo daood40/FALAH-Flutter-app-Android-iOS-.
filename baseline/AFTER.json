@@ -1,0 +1,228 @@
+{
+ "label": "AFTER",
+ "at": "2026-09-04T02:12:05",
+ "git": "53b3d46",
+ "routes": {
+  "/healthz": {
+   "p50": 0.72,
+   "min": 0.65,
+   "max": 0.89,
+   "n": 25,
+   "status": 200,
+   "auth": "public"
+  },
+  "/readyz": {
+   "p50": 2.06,
+   "min": 1.95,
+   "max": 2.81,
+   "n": 25,
+   "status": 200,
+   "auth": "public"
+  },
+  "/health": {
+   "p50": 57.73,
+   "min": 55.38,
+   "max": 65.68,
+   "n": 25,
+   "status": 200,
+   "auth": "public"
+  },
+  "/card?kind=quran&surah=94&ayah=5&to=6": {
+   "p50": 1.97,
+   "min": 1.89,
+   "max": 2.25,
+   "n": 25,
+   "status": 200,
+   "auth": "public"
+  },
+  "/card?kind=hadith&book=bukhari&no=1": {
+   "p50": 2.42,
+   "min": 2.31,
+   "max": 2.72,
+   "n": 25,
+   "status": 200,
+   "auth": "public"
+  },
+  "/quran/search?q=%D8%A7%D9%84%D8%B5%D8%A8%D8%B1&limit=10": {
+   "p50": 1.71,
+   "min": 1.65,
+   "max": 1.96,
+   "n": 25,
+   "status": 200,
+   "auth": "public"
+  },
+  "/hadith/search?q=%D8%A7%D9%84%D9%86%D9%8A%D8%A9&limit=10": {
+   "p50": 1.98,
+   "min": 1.91,
+   "max": 2.38,
+   "n": 25,
+   "status": 200,
+   "auth": "public"
+  },
+  "/chapters?book=bukhari": {
+   "p50": 3.62,
+   "min": 3.47,
+   "max": 4.02,
+   "n": 25,
+   "status": 200,
+   "auth": "public"
+  },
+  "/templates?kind=quran&limit=20": {
+   "p50": 2.03,
+   "min": 1.94,
+   "max": 2.27,
+   "n": 25,
+   "status": 200,
+   "auth": "public"
+  },
+  "/topics": {
+   "p50": 1.81,
+   "min": 1.73,
+   "max": 2.21,
+   "n": 25,
+   "status": 200,
+   "auth": "public"
+  },
+  "/series?topic=1&count=5": {
+   "p50": 7.77,
+   "min": 7.54,
+   "max": 8.46,
+   "n": 25,
+   "status": 200,
+   "auth": "public"
+  },
+  "/sources": {
+   "p50": 1.52,
+   "min": 1.43,
+   "max": 2.16,
+   "n": 25,
+   "status": 200,
+   "auth": "public"
+  },
+  "/app/config": {
+   "p50": 0.78,
+   "min": 0.73,
+   "max": 0.88,
+   "n": 25,
+   "status": 200,
+   "auth": "public"
+  },
+  "/app/me": {
+   "p50": 1.33,
+   "min": 1.25,
+   "max": 1.73,
+   "n": 25,
+   "status": 200,
+   "auth": "session"
+  },
+  "/app/entitlements": {
+   "p50": 1.52,
+   "min": 1.41,
+   "max": 1.76,
+   "n": 25,
+   "status": 200,
+   "auth": "session"
+  },
+  "/app/projects": {
+   "p50": 1.42,
+   "min": 1.29,
+   "max": 1.75,
+   "n": 25,
+   "status": 200,
+   "auth": "session"
+  },
+  "/app/jobs": {
+   "p50": 1.47,
+   "min": 1.38,
+   "max": 3.71,
+   "n": 25,
+   "status": 200,
+   "auth": "session"
+  },
+  "/app/exports": {
+   "p50": 1.65,
+   "min": 1.32,
+   "max": 2.06,
+   "n": 25,
+   "status": 200,
+   "auth": "session"
+  },
+  "/app/limits": {
+   "p50": 1.6,
+   "min": 1.4,
+   "max": 2.0,
+   "n": 25,
+   "status": 200,
+   "auth": "session"
+  }
+ },
+ "queries": {
+  "/health": {
+   "queries": 12,
+   "status": 200
+  },
+  "/card?kind=quran&surah=94&ayah=5&to=6": {
+   "queries": 6,
+   "status": 200
+  },
+  "/card?kind=hadith&book=bukhari&no=1": {
+   "queries": 5,
+   "status": 200
+  },
+  "/quran/search?q=%D8%A7%D9%84%D8%B5%D8%A8%D8%B1&limit=10": {
+   "queries": 1,
+   "status": 200
+  },
+  "/hadith/search?q=%D8%A7%D9%84%D9%86%D9%8A%D8%A9&limit=10": {
+   "queries": 1,
+   "status": 200
+  },
+  "/chapters?book=bukhari": {
+   "queries": 2,
+   "status": 200
+  },
+  "/templates?kind=quran&limit=20": {
+   "queries": 2,
+   "status": 200
+  },
+  "/topics": {
+   "queries": 49,
+   "status": 200
+  },
+  "/sources": {
+   "queries": 1,
+   "status": 200
+  }
+ },
+ "enqueue": {
+  "export": {
+   "p50": 6.57,
+   "min": 5.68,
+   "max": 7.55,
+   "n": 12,
+   "statuses": [
+    202
+   ]
+  },
+  "video": {
+   "p50": 6.08,
+   "min": 5.08,
+   "max": 7.93,
+   "n": 12,
+   "statuses": [
+    202
+   ]
+  }
+ },
+ "sizes": {
+  "app.py": 440,
+  "api.py": 82,
+  "falah/authz.py": 320,
+  "falah/routing.py": 251
+ },
+ "queries_not_counted": {
+  "/healthz": "طبقة التطبيق — لا تمرّ بـapi.conn",
+  "/readyz": "طبقة التطبيق — لا تمرّ بـapi.conn",
+  "/series?topic=1&count=5": "carousel يفتح اتصالَه بنفسه"
+ }
+}

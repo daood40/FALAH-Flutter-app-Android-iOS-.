@@ -1,0 +1,418 @@
+name: CI
+
+# بوّابة الجودة: أي خطوةٍ تسقط تُسقط الأنبوب كلّه. لا `continue-on-error`
+# في أي خطوةٍ تفحص صحّةً — وما كان تحذيرًا يُطبع ولا يُخفى، لكنه لا يُمرَّر
+# على أنه نجاح. القاعدة: **البناء لا ينجح والاختبار ساقط.**
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.11"
+  PLAYWRIGHT_BROWSERS_PATH: /opt/pw-browsers
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+
+jobs:
+  # ═══════════ ١ · فحوصٌ سريعة لا تحتاج قاعدة المحتوى ═══════════
+  # تنفصل عن الباقي لأنها تُنجَز في دقيقةٍ وتكشف أغلب الأخطاء، فيعرف
+  # الدافعُ خطأه قبل أن ينتظر بناء قاعدةٍ من ٢٥٧ ميغابايت.
+  static:
+    name: تحليل ساكن (lint · types · secrets)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: تثبيت أدوات الفحص
+        run: pip install --no-cache-dir ruff==0.14.6 mypy==1.13.0 pip-audit==2.10.1
+
+      # ثغرات الاعتماديات: تُسقط الأنبوب. الوصفُ يُطبع كاملًا ليُعرف أيُّها
+      # ولماذا، لا رقمًا مجرَّدًا. ولا `continue-on-error` هنا.
+      - name: ثغرات الاعتماديات — pip-audit
+        run: pip-audit -r requirements.txt --progress-spinner off
+
+      - name: Lint — ruff
+        run: ruff check .
+
+      - name: Type check — mypy
+        run: mypy .
+
+      - name: الفحص الأمنيّ — أسرار وإعداد
+        run: python3 security_scan.py
+
+      - name: عقد الـAPI مطابقٌ للشيفرة
+        run: python3 api_contract.py --check
+
+      - name: كتالوج الصلاحيات محدَّث
+        run: python3 perms_report.py --check
+
+      - name: لا ملفّ ضخمٍ ولا سرٌّ في المستودع
+        run: |
+          set -euo pipefail
+          # ما تجاوز ٢ م.ب يُفحص يدويًّا: القواعد والخام لا مكان لها في git
+          big=$(git ls-files | while read -r f; do
+                  s=$(stat -c%s "$f"); [ "$s" -gt 2097152 ] && echo "$s $f"; done || true)
+          if [ -n "$big" ]; then echo "ملفّاتٌ ضخمة:"; echo "$big"; exit 1; fi
+          for p in '\.env$' '\.p8$' '\.pem$' 'service-account.*\.json$'; do
+            if git ls-files | grep -qE "$p"; then
+              echo "ملفٌّ ممنوع يطابق $p"; exit 1; fi
+          done
+
+      - name: الهجرات — لا هادمةٌ تجري ضمنًا
+        run: |
+          set -euo pipefail
+          python3 -m falah.migrate --status
+          # قاعدةٌ نظيفة يجب أن تبلغ آخر هجرةٍ آمنة بلا تدخّل
+          FALAH_APP_DB=$RUNNER_TEMP/ci.db python3 -m falah.migrate
+
+  # ═══════════ ٢ · الاختبارات الكاملة ═══════════
+  # تحتاج قاعدة المحتوى. تُبنى من الخام وتُخزَّن في الذاكرة المؤقّتة بمفتاحٍ
+  # يتغيّر بتغيّر البناء أو مصادره — فلا تُعاد إلا حين يلزم فعلًا.
+  tests:
+    name: اختبارات ووحدات وفحصٌ وواجهة
+    runs-on: ubuntu-latest
+    needs: static
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: تثبيت الاعتماديات
+        run: |
+          pip install --no-cache-dir -r requirements.txt
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+          playwright install --with-deps chromium
+
+      - name: استرجاع قاعدة المحتوى من الذاكرة المؤقّتة
+        id: db-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            falah.db
+            templates
+          key: falah-db-${{ hashFiles('build.py', 'falah/text.py', 'falah/matn.py',
+                                      'falah/reconcile.py', 'falah/grades.py',
+                                      'falah/jami.py', 'falah/verify.py') }}
+
+      - name: بناء قاعدة المحتوى إن لم تكن محفوظة
+        if: steps.db-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          if [ ! -d raw ]; then
+            echo "::error::مجلّد raw/ غير موجود ولا قاعدةٌ محفوظة."
+            echo "الخام لا يدخل git (١٦٥ م.ب). أتِح به وصولًا (artifact أو تخزينٌ خارجيّ)"
+            echo "أو احفظ falah.db مرّةً في الذاكرة المؤقّتة. راجع README ← البناء."
+            exit 1
+          fi
+          python3 build.py
+
+      - name: اختبارات الوحدة والتكامل
+        run: python3 tests.py
+
+      - name: تشغيل الخادم والعامل
+        run: |
+          set -euo pipefail
+          FALAH_INLINE_WORKER=0 nohup python3 app.py > /tmp/app.log 2>&1 &
+          nohup python3 worker.py > /tmp/worker.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -fsS http://localhost:8080/healthz >/dev/null 2>&1 && break; sleep 1; done
+          curl -fsS http://localhost:8080/readyz | tee /dev/stderr | grep -q '"ready": true'
+
+      - name: الفحص الشامل
+        run: APP=http://localhost:8080 API=http://localhost:8080 python3 audit.py
+
+      - name: فحص الواجهة في متصفّح
+        run: APP=http://localhost:8080 python3 ui_audit.py
+
+      - name: اختبار الكسر المتعمَّد
+        run: python3 failure_test.py
+
+      - name: فحص تسريب الأخطاء والسجلّ
+        run: python3 leak_test.py
+
+      - name: حدود المستخدم والملفّات — أ ← موردُ ب
+        run: python3 isolation_test.py
+
+      - name: طبقة الإذن — can() والجدول وأ ← موردُ ب
+        run: python3 authz_test.py
+
+      - name: الأدوار والصلاحيات وسجلّ التدقيق
+        run: python3 rbac_test.py
+
+      - name: الثوابت الأمنية المسمّاة
+        run: python3 invariants.py
+
+      - name: حدودُ الأصل — عميلٌ أصليٌّ يدخل وغريبٌ لا يقرأ جلسة
+        run: python3 cors_test.py
+
+      - name: المراقبة — سجلٌّ مبنيٌّ ومقاييسُ موسومةٌ وأسرارٌ محذوفة
+        run: python3 obs_test.py
+
+      - name: الجدولة — المنطقةُ والتوقيتُ الصيفيُّ ولا إطلاقَ مرّتين
+        run: python3 sched_test.py
+
+      - name: النشر — لا ادّعاءَ دعمٍ ولا سرَّ عارٍ ولا حسابَ غيرِك
+        run: python3 pub_test.py
+
+      - name: سلامة القاعدة وبروفة الهجرات
+        run: |
+          set -euo pipefail
+          python3 dbsafe.py check
+          python3 dbsafe.py backup
+          python3 dbsafe.py restore-test
+          python3 dbsafe.py migrate-check
+
+      - name: سجلّات الخادم والعامل عند الفشل
+        if: failure()
+        run: |
+          echo "── app ──"; tail -100 /tmp/app.log || true
+          echo "── worker ──"; tail -100 /tmp/worker.log || true
+
+  # ═══════════ ٣ · البناء ═══════════
+  # آخرُ خطوة، وبـ`needs` على ما قبلها: لا تُبنى صورةٌ واختبارٌ ساقط.
+  build:
+    name: بناء صورة الحاوية
+    runs-on: ubuntu-latest
+    needs: [static, tests]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: بناء الصورة
+        run: docker build -t falah:${{ github.sha }} .
+
+      - name: دخانٌ على الصورة — الخادم والعامل والحجم المشترك
+        run: |
+          set -euo pipefail
+          docker run -d --name falah-smoke -p 8080:8080 \
+            -e FALAH_INLINE_WORKER=1 falah:${{ github.sha }}
+          for i in $(seq 1 60); do
+            curl -fsS http://localhost:8080/healthz >/dev/null 2>&1 && break; sleep 2; done
+          curl -fsS http://localhost:8080/healthz | grep -q '"live": true'
+          curl -fsS http://localhost:8080/readyz  | grep -q '"ready": true'
+          # الملفّات الثابتة موجودةٌ في الصورة فعلًا لا في التطوير وحده
+          curl -fsS http://localhost:8080/manifest.webmanifest >/dev/null
+          curl -fsS http://localhost:8080/sw.js >/dev/null
+          # وفحص الحاوية نفسه يمرّ
+          test "$(docker inspect -f '{{.State.Health.Status}}' falah-smoke)" != "unhealthy"
+          docker logs falah-smoke | tail -20
+          docker rm -f falah-smoke
+
+      - name: التحقّق من إعداد النشر
+        run: |
+          set -euo pipefail
+          docker compose -f deploy/docker-compose.yml config >/dev/null
+          # الخادم والعامل خدمتان، ويتقاسمان القاعدة ومجلّد الصادرات
+          grep -q 'worker:' deploy/docker-compose.yml
+          test "$(grep -c 'falah-exports:/app/exports' deploy/docker-compose.yml)" = "2"
+        env:
+          FALAH_DOMAIN: ci.example.com
+
+  # ═══════════ ٤ · عميلُ Flutter ═══════════
+  # ينفصل عن الخادم لأنه سلسلةُ أدواتٍ أخرى، ويجري بالتوازي: سقوطُ تحليلٍ
+  # في Dart لا ينتظر بناءَ قاعدةِ محتوًى من ٢٥٧ ميغابايت ليُعرف.
+  flutter:
+    name: عميل Flutter (تحليل · اختبار · بناء)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: falah_app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.47.2"
+          channel: stable
+          cache: true
+
+      - name: الاعتماديات مقفلةٌ لا تُحلّ من جديد
+        # `--enforce-lockfile` يُسقط البناءَ إن خالف `pubspec.lock`. وبلا
+        # ذلك قد يُبنى إصدارٌ بحزمةٍ لم يرَها أحدٌ ولم تُختبر.
+        run: flutter pub get --enforce-lockfile
+
+      - name: التنسيق
+        run: dart format --output=none --set-exit-if-changed .
+
+      - name: التحليل الساكن
+        # `--fatal-infos` مقصود: تحذيرُ اليوم عيبُ الغد، ولا يُمرَّر
+        run: flutter analyze --fatal-infos
+
+      # ═══ الحزمةُ أوّلًا — قبل أيِّ شيءٍ يعتمد على الخادم ═══
+      #
+      # **الترتيبُ هنا قرارٌ لا صدفة.** كان بناءُ الحزمة بعد تشغيل الخادم،
+      # فلمّا تبيّن أنّ الخادمَ لا يقلع بلا قاعدة محتوًى (وهي ١٦٥ م.ب من
+      # الخام لا تدخل git) كانت الوظيفةُ تموت **قبل أن تُبنى الحزمة** —
+      # فلا يخرج APK من استنساخٍ نظيف. ومالكُ المشروع على هاتفٍ، وهذا
+      # الأثرُ طريقُه الوحيدةُ إلى تطبيقٍ يُثبَّت.
+      #
+      # فالحزمةُ تُبنى وتُفحص وتُرفع أوّلًا، ثم تجري الاختباراتُ الحيّة.
+      - name: بناء APK التجربة
+        run: flutter build apk --flavor staging --release
+
+      - name: صلاحيةُ الإنترنت موجودةٌ في الحزمة
+        # عيبٌ وقع فعلًا: Flutter يضيفها لمنافستَي التصحيح والتشخيص فقط،
+        # فكانت نسخةُ الإصدار تُفتح ولا تصل الخادمَ أبدًا وبلا رسالةِ خطأ.
+        run: |
+          set -euo pipefail
+          aapt2=$(ls "$ANDROID_HOME"/build-tools/*/aapt2 | tail -1)
+          "$aapt2" dump permissions \
+            build/app/outputs/flutter-apk/app-staging-release.apk \
+            | grep -q 'android.permission.INTERNET'
+
+      - name: وهُويّتُه تقول إنه تجريبيّ
+        run: |
+          set -euo pipefail
+          aapt2=$(ls "$ANDROID_HOME"/build-tools/*/aapt2 | tail -1)
+          b=$("$aapt2" dump badging build/app/outputs/flutter-apk/app-staging-release.apk)
+          echo "$b" | head -1
+          echo "$b" | grep -q "package: name='com.falah.app.staging'"
+          echo "$b" | grep -q "versionName='[^']*-staging'"
+
+      - name: حزمةُ التجربة — للتثبيت على جهاز
+        uses: actions/upload-artifact@v4
+        with:
+          name: falah-android-staging-apk
+          path: falah_app/build/app/outputs/flutter-apk/app-staging-release.apk
+          retention-days: 30
+
+      # ═══ الاختباراتُ الحيّة — على خادمٍ حقيقيّ ═══
+      # دورةُ الجلسة (دخول · نجاةٌ من إغلاق التطبيق · خروج · ٤٠١ · ٤٠٣) لا
+      # تُختبر بمضاعفات: الجرّةُ على القرص وترويسةُ `Set-Cookie` سلوكُ خادمٍ
+      # حقيقيّ.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: تشغيل الخادم
+        working-directory: .
+        env:
+          # الاستنساخُ النظيفُ بلا قاعدة محتوًى: يُعلَن ذلك صراحةً فيقلع
+          # الخادمُ للمصادقة وحدَها. و`/readyz` يبقى يردّ ٥٠٣ — فلا يُظنّ
+          # جاهزًا. والإنتاجُ يُبطل هذا الإعلانَ فلا يقلع بلا محتوى بحال.
+          FALAH_ALLOW_NO_CONTENT: "1"
+          FALAH_INLINE_WORKER: "0"
+        run: |
+          set -euo pipefail
+          pip install --no-cache-dir -r requirements.txt
+          python3 -m falah.migrate
+          nohup python3 app.py > /tmp/app.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -fsS http://localhost:8080/healthz >/dev/null 2>&1 && break; sleep 1; done
+          curl -fsS http://localhost:8080/healthz | grep -q '"live": true'
+          echo "قاعدةُ المحتوى:"; curl -s http://localhost:8080/readyz | grep -o '"content_db": [a-z]*'
+
+      - name: الاختبارات — على خادمٍ حيّ
+        run: |
+          set -euo pipefail
+          flutter test --dart-define=FALAH_API=http://localhost:8080 \
+                       --reporter expanded --file-reporter json:/tmp/ft.json
+
+      # **حارسُ الخضرة الكاذبة.** يفرّق بين تخطٍّ معلَنٍ وتخطٍّ صامت: الأوّل
+      # يُطبع بالاسم ويمضي، والثاني يُسقط الأنبوب. ومكتوبٌ ملفًّا مستقلًّا
+      # لا سطورًا في YAML — ما لا يُشغَّل إلا هنا لا يُختبر أبدًا، وحارسٌ
+      # معطوبٌ أسوأُ من لا حارس.
+      - name: لا تخطٍّ صامت — والمعلَنُ يُذكر بالاسم
+        working-directory: .
+        run: python3 check_skips.py /tmp/ft.json
+
+      - name: سجلُّ الخادم عند الفشل
+        if: failure()
+        run: tail -60 /tmp/app.log || true
+
+      # ═══ منفذُ الإنتاج — يُبنى فقط حين تُضاف أسرارُ التوقيع ═══
+      # ولا بديلَ عنه: `bundleProductionRelease` بلا مفتاحٍ **يفشل** بحارسٍ
+      # في `build.gradle.kts`، فلا تخرج حزمةٌ تبدو للمتجر وهي ليست له.
+      - name: تركيبُ مفتاح الرفع من الأسرار
+        id: signing
+        env:
+          KS: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KS:-}" ]; then
+            echo "have_key=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::لا أسرارَ توقيع — يُبنى منفذُ التجربة وحدَه."
+            echo "::notice::راجع docs/RELEASE_SIGNING.md لإضافتها."
+            exit 0
+          fi
+          echo "$KS" | base64 -d > "$RUNNER_TEMP/upload.jks"
+          keytool -list -keystore "$RUNNER_TEMP/upload.jks" \
+                  -storepass "${{ secrets.ANDROID_STORE_PASSWORD }}" \
+                  -alias "${{ secrets.ANDROID_KEY_ALIAS }}" > /dev/null
+          cat > android/key.properties <<EOF
+          storePassword=${{ secrets.ANDROID_STORE_PASSWORD }}
+          keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
+          keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
+          storeFile=$RUNNER_TEMP/upload.jks
+          EOF
+          echo "have_key=true" >> "$GITHUB_OUTPUT"
+          echo "✓ مفتاحُ الرفع مركَّبٌ ومُتحقَّقٌ منه"
+
+      - name: بناء AAB للمتجر
+        if: steps.signing.outputs.have_key == 'true'
+        run: flutter build appbundle --flavor production --release
+
+      - name: التأكّدُ أنّ الحزمةَ موقَّعةٌ فعلًا لا مجرّدَ مبنيّة
+        if: steps.signing.outputs.have_key == 'true'
+        run: |
+          set -euo pipefail
+          aab=build/app/outputs/bundle/productionRelease/app-production-release.aab
+          test -f "$aab"
+          # حزمةٌ بلا `META-INF/*.RSA` غيرُ موقَّعة — والبناءُ ينجح بدونها
+          unzip -l "$aab" | grep -qE 'META-INF/.*\.(RSA|EC|DSA)$'
+          echo "✓ AAB موقَّعةٌ بمفتاح الرفع"
+
+      # المفتاحُ لا يبقى على القرص بعد استعماله، ولو فشل البناء
+      - name: محوُ المفتاح
+        if: always()
+        run: rm -f android/key.properties "$RUNNER_TEMP/upload.jks" || true
+
+      - name: حزمةُ المتجر — للرفع إلى Play
+        if: steps.signing.outputs.have_key == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: falah-android-production-aab
+          path: falah_app/build/app/outputs/bundle/productionRelease/app-production-release.aab
+          retention-days: 90
+
+  # ═══════════ ٥ · بوّابة الجودة ═══════════
+  # وظيفةٌ واحدة تُلخّص الكلّ، وهي التي تُشترط في حماية الفرع. بلا هذه
+  # الوظيفة يمكن أن تُدمج مساهمةٌ سقطت فيها خطوةٌ لم يشترطها أحد.
+  quality-gate:
+    name: QUALITY_GATE
+    runs-on: ubuntu-latest
+    needs: [static, tests, build, flutter]
+    if: always()
+    steps:
+      - name: الحكم
+        run: |
+          set -euo pipefail
+          echo "static  : ${{ needs.static.result }}"
+          echo "tests   : ${{ needs.tests.result }}"
+          echo "build   : ${{ needs.build.result }}"
+          echo "flutter : ${{ needs.flutter.result }}"
+          if [ "${{ needs.static.result }}"  != "success" ] \
+          || [ "${{ needs.tests.result }}"   != "success" ] \
+          || [ "${{ needs.build.result }}"   != "success" ] \
+          || [ "${{ needs.flutter.result }}" != "success" ]; then
+            echo "QUALITY_GATE = FAIL"; exit 1
+          fi
+          echo "QUALITY_GATE = PASS"

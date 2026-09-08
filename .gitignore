@@ -1,0 +1,108 @@
+# ═══════════ أسرار — لا يدخل شيءٌ منها المستودع أبدًا ═══════════
+# القاعدة المكتوبة في launch/CREDENTIALS.md: المفتاح في ملفّ بيئةٍ بصلاحية
+# 600 خارج الشجرة، لا في الشيفرة ولا في docker-compose ولا في الواجهة.
+.env
+.env.*
+!.env.example
+*.p8
+*.pem
+*.key
+*.pfx
+*.p12
+*service-account*.json
+*serviceaccount*.json
+*credentials*.json
+secrets/
+keys/
+outbox/
+
+# ═══════════ قواعد البيانات ═══════════
+# falah.db مبنيّةٌ من raw/ بـ`build.py` (٢٥٧ م.ب) — لا تُحفظ، تُبنى.
+# app.db بيانات مستخدمين — لا تدخل مستودعًا بحالٍ.
+falah.db
+falah.db-*
+app.db
+app.db-*
+*.sqlite
+*.sqlite3
+backups/
+
+# ═══════════ مادّة خام ومخرجاتٌ مولّدة ═══════════
+# raw/ ١٦٥ م.ب تُنزَّل من المصادر · templates/ ٦٨ م.ب يولّدها البناء
+raw/
+templates/
+review/
+review_sample/
+exports/
+out/
+discovery.json
+falah-snapshot.json
+falah-content-layer.zip
+
+# صفحة المعاينة ومادّتها — يولّدها build_preview.py
+falah-preview.html
+preview-data.json
+preview-data.b64
+
+# عيّناتٌ ولقطاتٌ تُولَّد عند الاختبار
+*.mp4
+card_*.png
+out_*.png
+shot_*.png
+
+# ═══════════ مؤقّتات وذاكرات ═══════════
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+*.log
+.DS_Store
+
+# ═══════════ القشرة الأصلية ═══════════
+mobile/www/
+mobile/node_modules/
+mobile/android/
+mobile/ios/
+
+# الخطوط: تُشحن ملفّات .ttf/.woff2 المستعملة مع تراخيصها (OFL).
+# أرشيف التنزيل ونسخته المفكوكة مكرَّران — يُستبعدان، ويبقى الترخيص.
+fonts/amiri.zip
+fonts/Amiri-1.002/
+worker.beat
+.gate-logs/
+
+# قياساتُ P1.1 المؤقّتة — الملفّاتُ المحفوظة هي JSON وسجلّا البوّابة
+baseline/t_*
+
+# ─────────── Flutter ───────────
+falah_app/.dart_tool/
+falah_app/build/
+falah_app/.flutter-plugins*
+falah_app/*.iml
+falah_app/android/.gradle/
+falah_app/android/local.properties
+# مخازنُ المفاتيح **في أيِّ مكانٍ من الشجرة** لا في مجلّد أندرويد وحدَه.
+# كان النمطُ مقيَّدًا بـ`falah_app/android/app/`، فمخزنٌ يُنسخ إلى الجذر
+# لحظةَ بناءٍ عَجِلٍ كان يدخل git. ومفتاحُ الرفع الذي دخل التاريخَ لا يخرج
+# منه بحذفٍ لاحق — يُبدَّل ولا يُستدرك.
+**/*.jks
+**/*.keystore
+**/key.properties
+**/*.p12
+**/service-account*.json
+falah_app/ios/Flutter/ephemeral/
+falah_app/android/.cxx/
+falah_app/ios/Pods/
+falah_app/ios/.symlinks/
+certs/*.crt
+certs/*.pem
+
+# حزمُ git لا تدخل git: أثرٌ عن المستودع داخل المستودع، ينمو مع كلِّ توليد
+*.bundle
+
+# ملفُّ الاستيراد لمرّةٍ واحدة — يُرفع يدويًّا، ولا يدخل الشجرة
+import.yml

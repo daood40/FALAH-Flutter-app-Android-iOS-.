@@ -1,0 +1,23 @@
+# شهادة تلقائية من Let's Encrypt، وترويسات تشدّ المتصفّح على الاتصال المشفّر.
+{$FALAH_DOMAIN} {
+	encode gzip zstd
+	reverse_proxy app:8080 {
+		# يُمحى ما جاء من العميل ويُكتب العنوانُ الحقيقيّ وحده. بدون هذا
+		# يُلحق Caddy العنوانَ بما وجده، فتحمل الترويسة قيمةً منتحَلةً
+		# قبل الحقيقية — وحدُّ المعدّل «لكل عنوان» يصير قابلًا للتخطّي.
+		header_up X-Forwarded-For {remote_host}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options    "nosniff"
+		X-Frame-Options           "DENY"
+		Referrer-Policy           "same-origin"
+		-Server
+	}
+
+	# التصيير والفيديو يستغرقان ثوانيَ — لا تُقطع قبل أن يتمّا
+	request_body {
+		max_size 2MB
+	}
+}
