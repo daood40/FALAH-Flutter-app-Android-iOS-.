@@ -1,0 +1,88 @@
+name: ملءُ الحقول القانونيّة
+
+# ══════════════════════════════════════════════════════════════
+#  المالكُ يعمل من هاتفٍ بلا طرفيّة. وهذه الحقولُ الستّةُ آخرُ ما يمنع
+#  السياسةَ والشروطَ من أن تكونا وثيقتين تصلحان للنشر — والمتجران
+#  يرفضان سياسةً فيها فراغٌ ظاهر.
+#
+#  فهذه الشاشةُ هي المدخلُ العمليُّ الوحيد: Actions ← ملءُ الحقول
+#  القانونيّة ← Run workflow ← تُكتب القيمُ ستًّا ثم يُضغط الزرّ.
+#
+#  والمنطقُ والحرّاسُ في launch/apply_owner_fields.py لا هنا، ليُقرأ
+#  ويُختبر. وقيمةٌ فاسدةٌ توقفه قبل أن يمسّ ملفًّا.
+# ══════════════════════════════════════════════════════════════
+
+on:
+  workflow_dispatch:
+    inputs:
+      entity:
+        description: "الاسم الكامل أو اسم الكيان (كما يُكتب في وثيقة قانونيّة)"
+        required: true
+      privacy_email:
+        description: "بريد الخصوصيّة — يُنشر علنًا في السياسة"
+        required: true
+      support_email:
+        description: "بريد الدعم — يُنشر علنًا في الشروط"
+        required: true
+      domain:
+        description: "النطاق عاريًا، مثل falah.app (بلا https:// وبلا مسار)"
+        required: true
+      hosting_country:
+        description: "بلد استضافة الخادم، مثل: ألمانيا"
+        required: true
+      jurisdiction:
+        description: "الاختصاص القضائيّ الذي تخضع له الشروط، مثل: ليبيا"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  fill:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: ملءُ الحقول
+        run: |
+          python3 launch/apply_owner_fields.py \
+            --entity           "${{ inputs.entity }}" \
+            --privacy-email    "${{ inputs.privacy_email }}" \
+            --support-email    "${{ inputs.support_email }}" \
+            --domain           "${{ inputs.domain }}" \
+            --hosting-country  "${{ inputs.hosting_country }}" \
+            --jurisdiction     "${{ inputs.jurisdiction }}"
+
+      - name: التأكّدُ أنّه لم يبقَ فراغ
+        run: |
+          set -euo pipefail
+          # الحارسُ الأخير: لو نجح الاستبدالُ وبقي عنصرٌ نائبٌ لسببٍ ما،
+          # فالوثيقةُ ليست صالحةً للنشر ولا تُلتزَم.
+          if grep -rn "يُملأ:" docs/PRIVACY_POLICY.md docs/TERMS_OF_SERVICE.md; then
+            echo "::error::بقي عنصرٌ نائبٌ في الوثائق — لن يُلتزَم شيء."
+            exit 1
+          fi
+          echo "✓ لا فراغ"
+
+      - name: الالتزامُ والدفع
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo "· لا تغيير — الوثيقتان مملوءتان أصلًا."
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/PRIVACY_POLICY.md docs/TERMS_OF_SERVICE.md
+          git commit -m "legal: ملءُ حقول المالك في السياسة والشروط
+
+قيمٌ أعطاها المالكُ في نموذج Actions — لم تُخترع ولم تُخمَّن.
+والحارسُ يرفض قيمةً فارغةً أو بريدًا فاسدًا أو نطاقًا بمخطَّط."
+          git push
+          echo "✓ دُفعت الوثيقتان"
+
+      - name: ما بعدَ هذا
+        run: |
+          echo "الوثيقتان جاهزتان. وتُنشران على /privacy و/terms بمجرّد إقلاع الخادم."
+          echo ""
+          echo "⚠ هذا ملأ فراغًا، ولا يُغني عن قراءتهما بعينك قبل تقديمهما للمتجرين."
