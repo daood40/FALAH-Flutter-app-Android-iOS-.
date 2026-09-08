@@ -427,9 +427,11 @@ ENC = os.path.join(RAW, "enc")
 if os.path.exists(os.path.join(ENC, "ar.json")):
     s_enc = src("hadeethenc","الموسوعة الحديثية — متن وشرح وفوائد","hadith",
                 "HadeethEnc.com","v1","يحتاج مراجعة ترخيص")
-    ar = json.load(open(os.path.join(ENC, "ar.json")))
+    # اسمٌ خاصٌّ بهذه الكتلة: `ar` مربوطٌ أعلاه بنصٍّ عربيٍّ مفردٍ (السطر ٢٧٣)،
+    # فإعادةُ ربطه هنا بقاموسٍ تُعمي فحصَ الأنواع عن هذه الكتلة كلِّها.
+    enc_ar = json.load(open(os.path.join(ENC, "ar.json")))
     n_ok = 0
-    for hid_, h in ar.items():
+    for hid_, h in enc_ar.items():
         full  = clean(h.get("hadeeth") or "")
         intro = clean(h.get("hadeeth_intro") or "")
         # المتن يبدأ بمقدمة الراوي («عن أبي موسى … قال:») — تُفصل ليصحّ
@@ -469,7 +471,7 @@ if os.path.exists(os.path.join(ENC, "ar.json")):
                   SELECT e.id, h.id FROM enc e JOIN hadiths h ON h.core_key = e.core_key
                   WHERE e.core_key IS NOT NULL AND e.core_key <> ''""")
     linked = one("SELECT COUNT(DISTINCT enc_id) FROM enc_link")
-    log(f"الموسوعة: {len(ar)} حديثًا · للبطاقة {n_ok} · ترجمات {n_tr} · مربوط بالكتب {linked}")
+    log(f"الموسوعة: {len(enc_ar)} حديثًا · للبطاقة {n_ok} · ترجمات {n_tr} · مربوط بالكتب {linked}")
 
 # ═══════════ فهرس الموضوعات ═══════════
 from falah.text import fts_query

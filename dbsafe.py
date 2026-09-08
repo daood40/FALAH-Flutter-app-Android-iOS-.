@@ -19,6 +19,7 @@
 الأعداد صفًّا صفًّا قبل وبعد. فإن نقص شيءٌ ظهر قبل أن يقع.
 """
 import gzip, hashlib, json, os, shutil, sqlite3, subprocess, sys, tempfile, time
+from collections.abc import Callable
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -394,8 +395,12 @@ def cmd_guard():
 
 # ───────────────────────── التشغيل ─────────────────────────
 
-CMDS = {"check": cmd_check, "backup": cmd_backup, "restore-test": cmd_restore_test,
-        "migrate-check": cmd_migrate_check, "guard": cmd_guard}
+# النوعُ مكتوبٌ صراحةً لأنّ أنواعَ الرجوع مختلفة، فيستنتج mypy `object`
+# ويرفض النداءَ في السطر ٤٠٤. والرجوعُ `object` مقصود: الشرطُ أدناه
+# `r is not False` وحدَه، فأيُّ قيمةٍ غيرِ False تعني نجاحًا.
+CMDS: dict[str, Callable[[], object]] = {
+    "check": cmd_check, "backup": cmd_backup, "restore-test": cmd_restore_test,
+    "migrate-check": cmd_migrate_check, "guard": cmd_guard}
 
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "check"
