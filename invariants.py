@@ -18,7 +18,7 @@
 ومَن أراد توسيعَ نطاقٍ (أن يقرأ إداريٌّ محتوى الناس مثلًا) فليضف صلاحيةً
 باسمها ونطاقًا ويحدّث الثابتَ صراحةً — لا أثرًا جانبيًّا.
 """
-import io, os, sys, tokenize
+import io, os, re, sys, tokenize
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -335,6 +335,42 @@ def _b23():
     ap = open(os.path.join(HERE, "app.py"), encoding="utf-8").read()
     still = "close_connection = True" in ap and "413" in ap
     return card and split and still, f"بطاقة={card} · مفصول={split} · السلوك كما هو={still}"
+
+# ═══════════════════ ٦ · ترخيصُ المصدر ═══════════════════
+
+@invariant("DISABLED_SOURCE_NEVER_SERVES_TEXT",
+           "مصدرٌ مُطفأ في `sources` لا يصل منه حرفٌ إلى بطاقة — بنيةً لا انتباهًا")
+def _disabled_source_silent():
+    """إطفاءُ المصدر هو المِخلاصُ القانونيُّ الوحيد لمصدرٍ محفوظِ الحقوق
+    لم يصل إذنُه (`launch/LICENSES.md`: «البديل ريثما يصل الإذن: إطفاؤه»).
+
+    وقد كان وهمًا: قوائمُ الاختيار في `content_routes.py` تشترط `enabled=1`
+    فتُخفيه، و`cards.py` لا تشترطه فتنشره. أُثبت بالتشغيل على قاعدةٍ
+    صغيرةٍ بالمخطَّط الحقيقيّ: نصُّ تفسيرٍ وترجمةٍ مُطفأين خرجا في البطاقة.
+
+    فالثابتُ هنا شكلٌ لا سلوك، عمدًا: يسقط **لحظةَ تُكتب** وصلةٌ جديدةٌ
+    بجدول `sources` بلا شرط، لا لحظةَ يُكتشف تسرّبٌ في الإنتاج.
+    """
+    text = open(os.path.join(HERE, "falah", "cards.py"), encoding="utf-8").read()
+
+    # كلُّ وصلةٍ بـ`sources` في مسار البناء تُقيَّد بـ`enabled`. والاستعلامُ
+    # قد يمتدّ أسطرًا، فيُفحص ما بين الوصلة ونهاية نصِّ الاستعلام.
+    unguarded = []
+    for m in re.finditer(r"JOIN\s+sources\s+(\w+)\s+ON", text):
+        alias = m.group(1)
+        tail = text[m.end():m.end() + 600]
+        stop = tail.find('"""')
+        stop = len(tail) if stop == -1 else stop
+        if f"{alias}.enabled" not in tail[:stop]:
+            line = text[:m.start()].count("\n") + 1
+            unguarded.append(f"cards.py:{line} (وصلة {alias})")
+
+    # وحارسُ التحقّق يقرأ حالَ المصدر، ولا يُكتب `True` ثابتًا لأيِّ بطاقة.
+    hardcoded = re.findall(r'"source_registered"\s*:\s*True', text)
+
+    ok = not unguarded and not hardcoded
+    return ok, (f"وصلاتٌ بلا شرط={unguarded} · "
+                f"«مُدرج» ثابتةٌ بلا فحص={len(hardcoded)}")
 
 # ═══════════════════ المشغّل ═══════════════════
 

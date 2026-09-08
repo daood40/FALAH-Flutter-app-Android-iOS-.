@@ -69,8 +69,13 @@ def quran_card(c, surah, ayah, to=None, tafsir=False, translation=False, topic=N
                            "riwayah": src["riwayah"], "origin": src["origin"],
                            "license": src["license_status"]}}
     if tafsir:
+        # `s.enabled=1` شرطٌ لا زينة: إطفاءُ مصدرٍ في جدول `sources` هو
+        # المِخلاصُ الوحيدُ الموعود في `launch/LICENSES.md` لمصدرٍ محفوظِ
+        # الحقوق لم يصل إذنُه. وكان الشرطُ غائبًا هنا فكان الإطفاءُ وهمًا:
+        # القائمةُ تُخفيه و«البطاقة» تنشره. أُثبت بالتشغيل، ثم حُرس باختبار.
         t = c.execute("""SELECT t.text, s.name FROM ayah_tafsir t JOIN sources s ON s.id=t.source_id
-                         WHERE t.surah=? AND t.ayah BETWEEN ? AND ? ORDER BY t.ayah""",
+                         WHERE t.surah=? AND t.ayah BETWEEN ? AND ? AND s.enabled=1
+                         ORDER BY t.ayah""",
                       (surah, ayah, to)).fetchall()
         # آيتان قد تشتركان في نصّ تفسير واحد — لا يُكرَّر
         if t:
@@ -81,7 +86,8 @@ def quran_card(c, surah, ayah, to=None, tafsir=False, translation=False, topic=N
     if translation:
         t = c.execute("""SELECT t.text, s.name FROM ayah_translation t
                          JOIN sources s ON s.id=t.source_id
-                         WHERE t.surah=? AND t.ayah BETWEEN ? AND ? ORDER BY t.ayah""",
+                         WHERE t.surah=? AND t.ayah BETWEEN ? AND ? AND s.enabled=1
+                         ORDER BY t.ayah""",
                       (surah, ayah, to)).fetchall()
         if t:
             seen, parts = set(), []
@@ -189,7 +195,8 @@ def hadith_card(c, book, no, topic=None):
     # شرح الحديث من الموسوعة الحديثية حين يكون متنُها مطابقًا لمتنِه
     sh = c.execute("""SELECT e.explanation, e.hints, s2.name FROM enc_link l
                       JOIN enc e ON e.id=l.enc_id JOIN sources s2 ON s2.id=e.source_id
-                      WHERE l.hadith_id=? AND e.explanation IS NOT NULL LIMIT 1""",
+                      WHERE l.hadith_id=? AND e.explanation IS NOT NULL
+                        AND s2.enabled=1 LIMIT 1""",
                    (r["id"],)).fetchone()
     if sh:
         item["sharh"] = {"text": sh["explanation"], "source": sh["name"]}
@@ -268,7 +275,10 @@ def enc_card(c, eid, lang=None, topic=None):
                            "origin": src["origin"], "license": src["license_status"]}}
     if trs.get("en"): item["translation"] = {"text": trs["en"]["matn"], "source": "HadeethEnc — English"}
     ctx = {
-        "source_registered": True, "source_name": src["name"],
+        # كان `True` ثابتًا، فكان فاحصُ «المصدر مُدرج» يمرّ دائمًا مهما
+        # أُطفئ المصدر — وأختاه في هذا الملفّ تقرآن `src["enabled"]`.
+        # والموسوعةُ مصدرٌ حالُ ترخيصه «يحتاج مراجعة»، فهي أولى بالفحص لا أحقَّ بالإعفاء.
+        "source_registered": bool(src["enabled"]), "source_name": src["name"],
         "fp_pairs": [(r["matn"], r["matn_fp"])],
         "edition": src["edition"], "origin": src["origin"],
         "license_status": src["license_status"], "riwayah": r["attribution"] or "—",
