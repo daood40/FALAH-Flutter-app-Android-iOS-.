@@ -66,8 +66,13 @@ class H(BaseHTTPRequestHandler):
         try:
             obj, code = CR.dispatch(c, u.path.rstrip("/") or "/", parse_qs(u.query))
             self._send(obj, code)
-        except (ValueError, TypeError):
-            # رقمٌ غير رقم، أو حقلٌ ناقص — خطأ في الطلب لا في الخادم
+        except (ValueError, TypeError, OverflowError):
+            # رقمٌ غير رقم، أو حقلٌ ناقص — خطأ في الطلب لا في الخادم.
+            #
+            # و`OverflowError` معها وإن لم ترثها: أعدادُ بايثون بلا سقف،
+            # فـ`int("9"*40)` تنجح ثم تفيض عند ربطها بـSQLite. فكان رقمٌ
+            # من أربعين خانةً في `?surah=` يُخرج ٥٠٠ لأيِّ زائرٍ بلا جلسة.
+            # كُشف بجولةٍ عدائيّةٍ على خادمٍ حيّ — راجع `qa/rounds/`.
             self._send({"error": "قيمةٌ غير صالحة في الطلب"}, 400)
         except Exception as e:
             # لا يُسرَّب أثر التنفيذ إلى الخارج؛ يُسجَّل عندنا ويُختصر عندهم

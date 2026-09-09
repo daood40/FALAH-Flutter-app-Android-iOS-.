@@ -461,8 +461,13 @@ class App(BaseHTTPRequestHandler):
             else:
                 self.log_error("internal %s: KeyError: %s", self.path, e)
                 self.send_json({"error": "خطأ داخلي"}, 500)
-        except (ValueError, TypeError) as e:
-            # رقمٌ نصّيّ أو حقلٌ من نوعٍ غير متوقَّع: خطأُ طلبٍ لا عطبُ خادم
+        except (ValueError, TypeError, OverflowError) as e:
+            # رقمٌ نصّيّ أو حقلٌ من نوعٍ غير متوقَّع: خطأُ طلبٍ لا عطبُ خادم.
+            #
+            # و`OverflowError` منها وإن لم تكن من `ValueError`: أعدادُ بايثون
+            # بلا سقف، فـ`int("9"*40)` تنجح ثم تفيض عند ربطها بـSQLite. فكان
+            # رقمٌ من أربعين خانةً في `?surah=` يُخرج **500** لأيِّ زائرٍ بلا
+            # جلسة. كُشف بجولةٍ عدائيّةٍ على خادمٍ حيّ (qa/rounds/).
             self.log_error("bad request %s: %r", self.path, e)
             self.send_json({"error": "قيمةٌ غير صالحة في الطلب"}, 400)
         except Exception as e:
