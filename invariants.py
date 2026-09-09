@@ -372,6 +372,27 @@ def _disabled_source_silent():
     return ok, (f"وصلاتٌ بلا شرط={unguarded} · "
                 f"«مُدرج» ثابتةٌ بلا فحص={len(hardcoded)}")
 
+@invariant("EVERY_CONTRIBUTING_SOURCE_IS_CHECKED",
+           "فاحصُ الحقوق يقرأ كلَّ مُسهِمٍ بنصٍّ في البطاقة لا الأساسيَّ وحدَه")
+def _every_contributor_checked():
+    """كان العنوانُ يقول «كلّ مصدر» والتنفيذُ يقرأ حقلًا واحدًا، فتمرّ
+    ترجمةٌ أو تفسيرٌ أو شرحٌ من مصدرٍ آخرَ بلا سؤالٍ عن حقّه — وهي مواضعُ
+    الخطر أصلًا، لا نصُّ القرآن المرخَّص.
+
+    فالثابتُ يمنع الرجوع: كلُّ بانٍ للبطاقة يملأ `contributors`،
+    والفاحصُ يقرؤها.
+    """
+    v = open(os.path.join(HERE, "falah", "verify.py"), encoding="utf-8").read()
+    c = open(os.path.join(HERE, "falah", "cards.py"), encoding="utf-8").read()
+
+    reads = 'ctx.get("contributors")' in v
+    # ثلاثةُ بناةٍ: قرآن · حديث · موسوعة — ولكلٍّ ctx خاصّ
+    builders = len(re.findall(r'"contributors"\s*:', c))
+    ctxs = len(re.findall(r'^\s{4}ctx = \{', c, re.M))
+
+    return reads and builders >= ctxs and ctxs >= 3, \
+        f"الفاحصُ يقرؤها={reads} · بناةٌ يملؤونها={builders} من {ctxs}"
+
 @invariant("LICENCE_CLEARED_IS_EXPLICIT",
            "لا يُبنى مصدرٌ مفعَّلًا إلا بإذنٍ مسمًّى — والقائمةُ مثبَّتةٌ بالاسم")
 def _licence_cleared_explicit():
