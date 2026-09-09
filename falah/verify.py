@@ -90,8 +90,16 @@ def run(item: dict, ctx: dict) -> dict:
     add(4, "النص يسع البطاقة دون قطع",
         _r(fits or (slides > 1 and ctx.get("split_ok")),
            ("%d حرفًا" % n) if fits else "%d حرفًا على %d شرائح" % (n, slides)))
+    # «كلّ مصدر» تعني كلَّ مصدرٍ أسهم بنصٍّ في هذه البطاقة، لا الأساسيَّ
+    # وحدَه. وكان يُقرأ حقلٌ واحدٌ (`license_status`) فيمرّ تفسيرٌ أو شرحٌ
+    # أو ترجمةٌ من مصدرٍ آخر بلا سؤالٍ عن ترخيصه — والعنوانُ يقول غيرَ ذلك.
+    # فصار يقرأ `contributors`: (اسمٌ، حالُ ترخيص) لكلِّ مُسهِم.
+    cons = ctx.get("contributors") or [("المصدر", ctx.get("license_status"))]
+    missing = [n for n, lic in cons if not lic]
     add(4, "حالة ترخيص كل مصدر مسجَّلة",
-        _r(bool(ctx.get("license_status")), ctx.get("license_status", "")))
+        _r(not missing,
+           "بلا حالِ ترخيص: " + " · ".join(missing) if missing
+           else " · ".join(f"{n}: {lic}" for n, lic in cons)))
 
     passed = sum(1 for c in C if c["ok"])
     return {

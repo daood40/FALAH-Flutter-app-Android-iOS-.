@@ -49,6 +49,11 @@ def quran_card(c, surah, ayah, to=None, tafsir=False, translation=False, topic=N
     src = c.execute("SELECT * FROM sources WHERE id=?", (rows[0]["source_id"],)).fetchone()
     pages = sorted({r["page"] for r in rows})
     text  = " ۝ ".join(r["text"] for r in rows)
+    # كلُّ مصدرٍ أسهم بنصٍّ في هذه البطاقة — لا الأساسيُّ وحدَه. فاحصُ
+    # الحقوق في `verify.py` يقول «حالة ترخيص **كلّ** مصدر»، وكان يقرأ
+    # حقلًا واحدًا فيفحص الأساسيَّ فقط: تفسيرٌ أو ترجمةٌ تُضاف لا يُسأل
+    # عن ترخيصها. فصار العنوانُ يطابق ما يُفحص.
+    contributors = [(src["name"], src["license_status"])]
 
     page_ar = ("صفحة " + arabic_num(pages[0])) if len(pages) == 1 else \
               ("صفحات %s–%s" % (arabic_num(pages[0]), arabic_num(pages[-1])))
@@ -73,7 +78,8 @@ def quran_card(c, surah, ayah, to=None, tafsir=False, translation=False, topic=N
         # المِخلاصُ الوحيدُ الموعود في `launch/LICENSES.md` لمصدرٍ محفوظِ
         # الحقوق لم يصل إذنُه. وكان الشرطُ غائبًا هنا فكان الإطفاءُ وهمًا:
         # القائمةُ تُخفيه و«البطاقة» تنشره. أُثبت بالتشغيل، ثم حُرس باختبار.
-        t = c.execute("""SELECT t.text, s.name FROM ayah_tafsir t JOIN sources s ON s.id=t.source_id
+        t = c.execute("""SELECT t.text, s.name, s.license_status FROM ayah_tafsir t
+                         JOIN sources s ON s.id=t.source_id
                          WHERE t.surah=? AND t.ayah BETWEEN ? AND ? AND s.enabled=1
                          ORDER BY t.ayah""",
                       (surah, ayah, to)).fetchall()
@@ -83,8 +89,9 @@ def quran_card(c, surah, ayah, to=None, tafsir=False, translation=False, topic=N
             for r in t:
                 if r["text"] not in seen: seen.add(r["text"]); parts.append(r["text"])
             item["tafsir"] = {"text": " ".join(parts), "source": t[0]["name"]}
+            contributors += [(r["name"], r["license_status"]) for r in t]
     if translation:
-        t = c.execute("""SELECT t.text, s.name FROM ayah_translation t
+        t = c.execute("""SELECT t.text, s.name, s.license_status FROM ayah_translation t
                          JOIN sources s ON s.id=t.source_id
                          WHERE t.surah=? AND t.ayah BETWEEN ? AND ? AND s.enabled=1
                          ORDER BY t.ayah""",
@@ -94,6 +101,7 @@ def quran_card(c, surah, ayah, to=None, tafsir=False, translation=False, topic=N
             for r in t:
                 if r["text"] not in seen: seen.add(r["text"]); parts.append(r["text"])
             item["translation"] = {"text": " ".join(parts), "source": t[0]["name"]}
+            contributors += [(r["name"], r["license_status"]) for r in t]
 
     # سياق ما قبل وما بعد
     prev_ = c.execute("SELECT text FROM ayat WHERE surah=? AND ayah=?", (surah, ayah-1)).fetchone()
@@ -119,6 +127,7 @@ def quran_card(c, surah, ayah, to=None, tafsir=False, translation=False, topic=N
         "fp_pairs": [(r["text"], r["fingerprint"]) for r in rows],
         "edition": src["edition"], "origin": src["origin"],
         "license_status": src["license_status"], "riwayah": src["riwayah"],
+        "contributors": contributors,
         "corroboration": 2 if all(r["verify_status"] in ("exact","orthographic") for r in rows) else 1,
         "exact_match": True,
         "cross_match": all(r["verify_status"] in ("exact","orthographic") for r in rows),
@@ -161,6 +170,7 @@ def hadith_card(c, book, no, topic=None):
                        JOIN books b ON b.id=t.book_id WHERE t.group_key=?""",
                     (r["core_key"] or "",)).fetchall()
     takhrij = [f"{x['name_ar']} {arabic_num(x['number_in_book'])}" for x in tk]
+    contributors = [(src["name"], src["license_status"])]
 
     item = {"type": "hadith", "text": r["matn"] or r["full_ar"],
             "cells": {"c1": [r["bn"], r["bne"]],
@@ -193,13 +203,15 @@ def hadith_card(c, book, no, topic=None):
         item["translation"] = {"text": r["text_en"], "source": "الترجمة الإنجليزية — Sunnah.com"}
 
     # شرح الحديث من الموسوعة الحديثية حين يكون متنُها مطابقًا لمتنِه
-    sh = c.execute("""SELECT e.explanation, e.hints, s2.name FROM enc_link l
+    sh = c.execute("""SELECT e.explanation, e.hints, s2.name, s2.license_status
+                      FROM enc_link l
                       JOIN enc e ON e.id=l.enc_id JOIN sources s2 ON s2.id=e.source_id
                       WHERE l.hadith_id=? AND e.explanation IS NOT NULL
                         AND s2.enabled=1 LIMIT 1""",
                    (r["id"],)).fetchone()
     if sh:
         item["sharh"] = {"text": sh["explanation"], "source": sh["name"]}
+        contributors.append((sh["name"], sh["license_status"]))
         try:
             hints = json.loads(sh["hints"] or "[]")
             if hints: item["hints"] = hints
@@ -211,6 +223,7 @@ def hadith_card(c, book, no, topic=None):
         "fp_pairs": [(r["full_ar"], r["fingerprint"])],
         "edition": src["edition"], "origin": src["origin"],
         "license_status": src["license_status"], "riwayah": r["bn"],
+        "contributors": contributors,
         "corroboration": (max(len(tk), 2 if r["verify_status"] == "confirmed" else 1)
                           + (1 if r["jami_vol"] else 0)),
         "exact_match": True,
@@ -282,6 +295,8 @@ def enc_card(c, eid, lang=None, topic=None):
         "fp_pairs": [(r["matn"], r["matn_fp"])],
         "edition": src["edition"], "origin": src["origin"],
         "license_status": src["license_status"], "riwayah": r["attribution"] or "—",
+        # بطاقةُ الموسوعة: متنُها وشرحُها وترجماتُها من مصدرٍ واحد
+        "contributors": [(src["name"], src["license_status"])],
         "corroboration": 2 if links else 1,
         "exact_match": True, "cross_match": bool(links),
         "cross_note": ("مطابق في %d من الكتب التسعة" % len(links)) if links else "الموسوعة وحدها",
